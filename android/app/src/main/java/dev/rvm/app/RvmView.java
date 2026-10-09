@@ -92,6 +92,7 @@ public final class RvmView extends View {
                 put((char) (b & 0xFF));
             }
         }
+        blinkOn = true; /* fresh output: show the cursor now, not mid-blink */
         invalidate();
     }
 
@@ -144,16 +145,19 @@ public final class RvmView extends View {
     }
 
     private void measureFont() {
-        float size = Math.max(18f, getHeight() / 30f);
+        int w = getWidth() - getPaddingLeft() - getPaddingRight();
+        int h = getHeight() - getPaddingTop() - getPaddingBottom();
+        if (w <= 0 || h <= 0) return;
+        float size = Math.max(15f, h / 32f);
         fg.setTextSize(size);
         Paint.FontMetrics fm = fg.getFontMetrics();
-        lineH = (float) Math.ceil(fm.descent - fm.ascent);
+        /* A little air between lines: a packed grid is hard to read on a
+         * phone and costs one line of scrollback. */
+        lineH = (float) Math.ceil((fm.descent - fm.ascent) * 1.15f);
         charW = fg.measureText("M");
         if (charW <= 0f) charW = size * 0.6f;
-        int c = (int) (getWidth() / charW);
-        int r = (int) (getHeight() / lineH);
-        cols = Math.max(20, Math.min(MAXCOLS, c));
-        rows = Math.max(4, r);
+        cols = Math.max(20, Math.min(MAXCOLS, (int) (w / charW)));
+        rows = Math.max(4, (int) (h / lineH));
     }
 
     @Override
@@ -162,25 +166,48 @@ public final class RvmView extends View {
         cv.drawRect(0, 0, getWidth(), getHeight(), bg);
 
         Paint.FontMetrics fm = fg.getFontMetrics();
-        float baseline = -fm.ascent;
+        float x0 = getPaddingLeft();
+        float top0 = getPaddingTop();
+        float base0 = top0 - fm.ascent;
 
         /* Show the last `rows` lines, oldest at the top. */
         int first = used > rows ? used - rows : 0;
         for (int i = first; i < used; i++) {
             int line = (head + i) % SCROLLBACK;
             int n = Math.min(len[line], cols);
-            if (n <= 0) continue;
-            float y = (i - first) * lineH + baseline;
-            cv.drawText(grid[line], 0, n, 0f, y, fg);
+            float top = top0 + (i - first) * lineH;
+            if (n > 0)
+                cv.drawText(grid[line], 0, n, x0, base0 + (i - first) * lineH, fg);
             /* Only the live last line gets a cursor. */
-            if (i == used - 1 && curCol <= cols) {
-                cv.drawRect(curCol * charW, (i - first) * lineH,
-                            (curCol + 1) * charW, (i - first + 1) * lineH, cursor);
+            if (i == used - 1 && curCol <= cols && blinkOn) {
+                cv.drawRect(x0 + curCol * charW, top,
+                            x0 + (curCol + 1) * charW, top + lineH, cursor);
             }
         }
-        if (used == 0) {
-            cv.drawRect(0f, 0f, charW, lineH, cursor);
+        if (used == 0 && blinkOn) {
+            cv.drawRect(x0, top0, x0 + charW, top0 + lineH, cursor);
         }
+    }
+
+    /* The one animation in the app: a terminal cursor that blinks.  It stops
+     * with the view, so a backgrounded guest costs nothing. */
+    private boolean blinkOn = true;
+    private final Runnable blink = new Runnable() {
+        @Override public void run() {
+            blinkOn = !blinkOn;
+            invalidate();
+            postDelayed(this, 530);
+        }
+    };
+
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        postDelayed(blink, 530);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        removeCallbacks(blink);
+        super.onDetachedFromWindow();
     }
 
     public int getCols() { return cols; }

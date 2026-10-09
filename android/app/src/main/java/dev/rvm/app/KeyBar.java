@@ -31,8 +31,7 @@ public final class KeyBar extends LinearLayout {
         super(c, a);
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
-        setBackgroundColor(0xFFEDEBE6);
-        setPadding(dp(4), dp(2), dp(4), dp(2));
+        setPadding(dp(5), 0, dp(5), 0);
 
         addView(textKey("Ctrl", new byte[] { 0 }, true));
         addView(textKey("Esc", new byte[] { 27 }, false));
@@ -55,17 +54,19 @@ public final class KeyBar extends LinearLayout {
 
     private Button base() {
         Button b = new Button(getContext());
-        LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, dp(42));
-        lp.setMargins(dp(2), 0, dp(2), 0);
+        LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, dp(44));
+        lp.setMargins(dp(3), dp(5), dp(3), dp(5));
         b.setLayoutParams(lp);
-        b.setMinWidth(dp(44));
-        b.setMinHeight(dp(42));
-        b.setPadding(dp(8), 0, dp(8), 0);
+        b.setBackgroundResource(R.drawable.bg_key);
+        b.setMinWidth(dp(52));
+        b.setMinHeight(dp(44));
+        b.setPadding(dp(12), 0, dp(12), 0);
         b.setAllCaps(false);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         b.setTextColor(0xFF2B2B28);
-        b.setBackgroundColor(0xFFF5F4F0);
         b.setGravity(Gravity.CENTER);
+        b.setStateListAnimator(null);
+        b.setElevation(0);
         return b;
     }
 
@@ -76,8 +77,7 @@ public final class KeyBar extends LinearLayout {
             @Override public void onClick(View v) {
                 if (toggle) {
                     b.setActivated(!b.isActivated());
-                    b.setBackgroundColor(b.isActivated() ? 0xFF2B2B28 : 0xFFF5F4F0);
-                    b.setTextColor(b.isActivated() ? 0xFFF5F4F0 : 0xFF2B2B28);
+                    b.setTextColor(b.isActivated() ? 0xFFEDEBE6 : 0xFF2B2B28);
                     /* Ctrl stays latched: the next letter is sent as a control
                      * code by MainActivity, which reads isCtrlLatched(). */
                 } else {
@@ -135,7 +135,6 @@ public final class KeyBar extends LinearLayout {
             View v = getChildAt(i);
             if (v instanceof Button && ((Button) v).isActivated()) {
                 v.setActivated(false);
-                v.setBackgroundColor(0xFFF5F4F0);
                 ((Button) v).setTextColor(0xFF2B2B28);
             }
         }

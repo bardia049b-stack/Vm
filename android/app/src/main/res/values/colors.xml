@@ -11,4 +11,7 @@
     <color name="ink">#2B2B28</color>
     <color name="ink_soft">#6E6C66</color>
     <color name="rule">#D8D5CE</color>
+    <!-- Text that sits on the ink header bar. -->
+    <color name="on_ink">#EDEBE6</color>
+    <color name="on_ink_soft">#A6A49D</color>
 </resources>

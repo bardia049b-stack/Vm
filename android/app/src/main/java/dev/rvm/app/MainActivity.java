@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.TextView;
@@ -41,6 +42,7 @@ public final class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile long vm;
     private volatile Thread vmThread;
+    private volatile boolean sawOutput;
     private File kernel, disk;
 
     @Override
@@ -56,6 +58,7 @@ public final class MainActivity extends Activity {
         kernel = new File(getFilesDir(), "vmlinux");
         disk = new File(getFilesDir(), "disk.img");
 
+        applyInsets();
         wireKeys();
         wireToolbar();
 
@@ -70,6 +73,7 @@ public final class MainActivity extends Activity {
 
         RvmNative.consoleSink = new RvmNative.ConsoleSink() {
             @Override public void onOutput(final byte[] buf, final int len) {
+                sawOutput = true;
                 final byte[] copy = new byte[len];
                 System.arraycopy(buf, 0, copy, 0, len);
                 ui.post(new Runnable() {
@@ -96,7 +100,8 @@ public final class MainActivity extends Activity {
 
         console.clear();
         if (!kernel.exists()) {
-            banner("No kernel yet.\n\nTap 'Kernel' and pick an ELF64 vmlinux for riscv64, "
+            banner("No kernel yet.\n\nTap 'Kernel' and pick a riscv64 kernel, either the "
+                 + "ELF vmlinux or the PE/EFI Image that Debian ships as /boot/vmlinux-*, "
                  + "then 'Disk' and pick a Debian ext4 image built with tools/mkrootfs.sh, "
                  + "then 'Boot'.");
         } else {
@@ -104,6 +109,31 @@ public final class MainActivity extends Activity {
                  + (disk.exists() ? "\n  disk:   " + human(disk.length()) : "\n  disk:   (none)")
                  + "\n\nTap 'Boot'.");
         }
+    }
+
+    /*
+     * The header is ink and the status bar is ink, so the header's top padding
+     * has to grow by the status bar height or the title sits under the clock.
+     * fitsSystemWindows on the root would pad the whole window in paper and
+     * leave a pale seam above the bar, hence doing it by hand.
+     */
+    private void applyInsets() {
+        final View header = findViewById(R.id.header);
+        final View keyscroll = findViewById(R.id.keyscroll);
+        header.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View v, WindowInsets in) {
+                v.setPadding(v.getPaddingLeft(), in.getSystemWindowInsetTop(),
+                             v.getPaddingRight(), v.getPaddingBottom());
+                return in;
+            }
+        });
+        keyscroll.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View v, WindowInsets in) {
+                v.setPadding(v.getPaddingLeft(), v.getPaddingTop(),
+                             v.getPaddingRight(), in.getSystemWindowInsetBottom());
+                return in;
+            }
+        });
     }
 
     /* -------------------------------------------------------------- wiring */
@@ -161,7 +191,15 @@ public final class MainActivity extends Activity {
         if (!kernel.exists()) { toast("pick a kernel first"); return; }
 
         console.clear();
+        sawOutput = false;
         status.setText("starting…");
+        ui.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (vm != 0 && !sawOutput) {
+                    status.setText("running, no output from the guest yet");
+                }
+            }
+        }, 8000);
         final String k = kernel.getAbsolutePath();
         final String d = disk.exists() ? disk.getAbsolutePath() : null;
         final String bootargs = "console=ttyS0 earlycon=sbi root=/dev/vda rw rootwait";
@@ -193,7 +231,10 @@ public final class MainActivity extends Activity {
                 });
             }
         }, "rvm-vm");
-        vmThread.setPriority(Thread.MAX_PRIORITY);
+        /* NORM, not MAX: the VM thread never blocks, and at MAX_PRIORITY it
+         * starves the UI thread on a phone's few cores, which reads as the
+         * whole app freezing. */
+        vmThread.setPriority(Thread.NORM_PRIORITY);
         vmThread.start();
     }
 
