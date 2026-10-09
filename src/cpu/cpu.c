@@ -13,9 +13,9 @@
 
 /* ------------------------------------------------------------- lifecycle */
 
-rvm_err cpu_init(cpu *c, bus *b, mmu *m, u32 hartid)
-{
-    if (!c || !b || !m) return RVM_ERR_BADARG;
+rvm_err cpu_init(cpu *c, bus *b, mmu *m, u32 hartid) {
+    if (!c || !b || !m)
+        return RVM_ERR_BADARG;
     memset(c, 0, sizeof(*c));
     c->bus = b;
     c->mmu = m;
@@ -31,8 +31,7 @@ rvm_err cpu_init(cpu *c, bus *b, mmu *m, u32 hartid)
  * S-mode kernel sees its own faults.  `dtb_addr` goes into a1 per the RISC-V
  * boot protocol (a0 = hartid, a1 = DTB).
  */
-void cpu_reset(cpu *c, u64 entry_pc, u64 dtb_addr)
-{
+void cpu_reset(cpu *c, u64 entry_pc, u64 dtb_addr) {
     u64 misa = c->csr[CSR_MISA];
     u64 hartid = c->hartid;
     bus *b = c->bus;
@@ -61,8 +60,7 @@ void cpu_reset(cpu *c, u64 entry_pc, u64 dtb_addr)
 
 /* --------------------------------------------------- address translation */
 
-static u32 eff_priv_for_mem(const cpu *c)
-{
+static u32 eff_priv_for_mem(const cpu *c) {
     if (c->priv == PRV_M) {
         if (c->csr[CSR_MSTATUS] & MSTATUS_MPRV)
             return (u32)((c->csr[CSR_MSTATUS] & MSTATUS_MPP) >> MSTATUS_MPP_SHIFT);
@@ -71,8 +69,7 @@ static u32 eff_priv_for_mem(const cpu *c)
     return c->priv;
 }
 
-static bool translate(cpu *c, u64 va, u32 acc, u64 *pa, u32 *cause)
-{
+static bool translate(cpu *c, u64 va, u32 acc, u64 *pa, u32 *cause) {
     u32 ep = eff_priv_for_mem(c);
     if (ep == PRV_M) {
         *pa = va;
@@ -82,7 +79,8 @@ static bool translate(cpu *c, u64 va, u32 acc, u64 *pa, u32 *cause)
     mmu_xlat r = mmu_translate(c->mmu, va, ep, c->csr[CSR_SATP], (mst & MSTATUS_MXR) != 0,
                                (mst & MSTATUS_SUM) != 0, acc);
     if (!r.ok) {
-        if (cause) *cause = r.cause;
+        if (cause)
+            *cause = r.cause;
         return false;
     }
     *pa = r.pa;
@@ -94,13 +92,14 @@ static bool translate(cpu *c, u64 va, u32 acc, u64 *pa, u32 *cause)
  * split so each half is translated independently -- required for correctness
  * when the two halves live in different physical pages.
  */
-bool cpu_mem_load(cpu *c, u64 va, u32 size, u64 *out, u32 *cause)
-{
+bool cpu_mem_load(cpu *c, u64 va, u32 size, u64 *out, u32 *cause) {
     u64 pa;
-    if (!translate(c, va, ACC_LOAD, &pa, cause)) return false;
+    if (!translate(c, va, ACC_LOAD, &pa, cause))
+        return false;
     u64 page_off = pa & 4095;
     if (page_off + size <= 4096) {
-        if (bus_load(c->bus, pa, size, out)) return true;
+        if (bus_load(c->bus, pa, size, out))
+            return true;
         *cause = EXC_LOAD_FAULT;
         return false;
     }
@@ -111,7 +110,8 @@ bool cpu_mem_load(cpu *c, u64 va, u32 size, u64 *out, u32 *cause)
     while (done < size) {
         u32 chunk = (u32)RVM_MIN((u64)(size - done), 4096 - ((pa + done) & 4095));
         u64 p;
-        if (!translate(c, va + done, ACC_LOAD, &p, cause)) return false;
+        if (!translate(c, va + done, ACC_LOAD, &p, cause))
+            return false;
         u64 part = 0;
         if (!bus_load(c->bus, p, chunk, &part)) {
             *cause = EXC_LOAD_FAULT;
@@ -124,12 +124,13 @@ bool cpu_mem_load(cpu *c, u64 va, u32 size, u64 *out, u32 *cause)
     return true;
 }
 
-bool cpu_mem_store(cpu *c, u64 va, u32 size, u64 val, u32 *cause)
-{
+bool cpu_mem_store(cpu *c, u64 va, u32 size, u64 val, u32 *cause) {
     u64 pa;
-    if (!translate(c, va, ACC_STORE, &pa, cause)) return false;
+    if (!translate(c, va, ACC_STORE, &pa, cause))
+        return false;
     if ((pa & 4095) + size <= 4096) {
-        if (bus_store(c->bus, pa, size, val)) return true;
+        if (bus_store(c->bus, pa, size, val))
+            return true;
         *cause = EXC_STORE_FAULT;
         return false;
     }
@@ -138,7 +139,8 @@ bool cpu_mem_store(cpu *c, u64 va, u32 size, u64 val, u32 *cause)
     while (done < size) {
         u32 chunk = (u32)RVM_MIN((u64)(size - done), 4096 - ((pa + done) & 4095));
         u64 p;
-        if (!translate(c, va + done, ACC_STORE, &p, cause)) return false;
+        if (!translate(c, va + done, ACC_STORE, &p, cause))
+            return false;
         if (!bus_store(c->bus, p, chunk, (val >> (8 * done)))) {
             *cause = EXC_STORE_FAULT;
             return false;
@@ -148,23 +150,27 @@ bool cpu_mem_store(cpu *c, u64 va, u32 size, u64 val, u32 *cause)
     return true;
 }
 
-static inline s64 sext_load(u64 v, u32 size, bool is_unsigned)
-{
-    if (is_unsigned) return (s64)v;
+static inline s64 sext_load(u64 v, u32 size, bool is_unsigned) {
+    if (is_unsigned)
+        return (s64)v;
     switch (size) {
-    case 1: return (s64)(s8)(u8)v;
-    case 2: return (s64)(s16)(u16)v;
-    case 4: return (s64)(s32)(u32)v;
-    default: return (s64)v;
+    case 1:
+        return (s64)(s8)(u8)v;
+    case 2:
+        return (s64)(s16)(u16)v;
+    case 4:
+        return (s64)(s32)(u32)v;
+    default:
+        return (s64)v;
     }
 }
 
 /* ------------------------------------------------------------------ fetch */
 
-static bool fetch(cpu *c, u32 *insn, u32 *len, u32 *cause)
-{
+static bool fetch(cpu *c, u32 *insn, u32 *len, u32 *cause) {
     u64 pa;
-    if (!translate(c, c->pc, ACC_EXEC, &pa, cause)) return false;
+    if (!translate(c, c->pc, ACC_EXEC, &pa, cause))
+        return false;
     u64 lo = 0;
     if (!bus_load(c->bus, pa, 2, &lo)) {
         *cause = EXC_INST_FAULT;
@@ -179,7 +185,8 @@ static bool fetch(cpu *c, u32 *insn, u32 *len, u32 *cause)
         /* 32-bit instruction crossing a page boundary: fetch the tail
          * separately so translation is checked for both pages. */
         u64 pa2;
-        if (!translate(c, c->pc + 2, ACC_EXEC, &pa2, cause)) return false;
+        if (!translate(c, c->pc + 2, ACC_EXEC, &pa2, cause))
+            return false;
         u64 hi = 0;
         if (!bus_load(c->bus, pa2, 2, &hi)) {
             *cause = EXC_INST_FAULT;
@@ -201,29 +208,30 @@ static bool fetch(cpu *c, u32 *insn, u32 *len, u32 *cause)
 
 /* ------------------------------------------------------------- decode bits */
 
-#define RD(i) ((u32)((i) >> 7) & 0x1F)
+#define RD(i)  ((u32)((i) >> 7) & 0x1F)
 #define RS1(i) ((u32)((i) >> 15) & 0x1F)
 #define RS2(i) ((u32)((i) >> 20) & 0x1F)
-#define F3(i) ((u32)((i) >> 12) & 0x7)
-#define F7(i) ((u32)((i) >> 25) & 0x7F)
-#define OP(i) ((u32)(i)&0x7F)
+#define F3(i)  ((u32)((i) >> 12) & 0x7)
+#define F7(i)  ((u32)((i) >> 25) & 0x7F)
+#define OP(i)  ((u32)(i)&0x7F)
 
-static inline s32 imm_i(u32 i) { return sext((s32)i >> 20, 12); }
-static inline s32 imm_s(u32 i)
-{
+static inline s32 imm_i(u32 i) {
+    return sext((s32)i >> 20, 12);
+}
+static inline s32 imm_s(u32 i) {
     return sext((s32)(((i >> 25) << 5) | ((i >> 7) & 0x1F)), 12);
 }
 /* imm[12]=insn[31], imm[11]=insn[7], imm[10:5]=insn[30:25], imm[4:1]=insn[11:8] */
-static inline s32 imm_b(u32 i)
-{
+static inline s32 imm_b(u32 i) {
     u32 v = (((i >> 31) & 1) << 12) | (((i >> 7) & 1) << 11) | (((i >> 25) & 0x3F) << 5) |
             (((i >> 8) & 0xF) << 1);
     return sext((s32)v, 13) & ~1;
 }
-static inline s32 imm_u(u32 i) { return (s32)(i & 0xFFFFF000u); }
+static inline s32 imm_u(u32 i) {
+    return (s32)(i & 0xFFFFF000u);
+}
 /* imm[20]=insn[31], imm[19:12]=insn[19:12], imm[11]=insn[20], imm[10:1]=insn[30:21] */
-static inline s32 imm_j(u32 i)
-{
+static inline s32 imm_j(u32 i) {
     u32 v = (((i >> 31) & 1) << 20) | (((i >> 12) & 0xFF) << 12) | (((i >> 20) & 1) << 11) |
             (((i >> 21) & 0x3FF) << 1);
     return sext((s32)v, 21) & ~1;
@@ -231,17 +239,16 @@ static inline s32 imm_j(u32 i)
 
 /* --------------------------------------------------------------- execute */
 
-#define TRAP_ILLEGAL()                                                                           \
-    do {                                                                                         \
-        cpu_trap(c, EXC_ILLEGAL_INST, insn, false);                                              \
-        *res = STEP_TRAP;                                                                        \
-        return false;                                                                            \
+#define TRAP_ILLEGAL()                                                                             \
+    do {                                                                                           \
+        cpu_trap(c, EXC_ILLEGAL_INST, insn, false);                                                \
+        *res = STEP_TRAP;                                                                          \
+        return false;                                                                              \
     } while (0)
 
 static void do_amo(cpu *c, u32 insn, u32 size, step_result *res, bool *ok);
 
-bool cpu_exec32(cpu *c, u32 insn, step_result *res)
-{
+bool cpu_exec32(cpu *c, u32 insn, step_result *res) {
     *res = STEP_OK;
     u32 rd = RD(insn), rs1 = RS1(insn), rs2 = RS2(insn), f3 = F3(insn), f7 = F7(insn);
     u64 a = cpu_rd(c, rs1), b = cpu_rd(c, rs2);
@@ -250,12 +257,15 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
     bool taken = false;
 
     switch (OP(insn)) {
-
     /* ------------------------------------------------------------ LUI */
-    case 0x37: cpu_wr(c, rd, (u64)(s64)imm_u(insn)); break;
+    case 0x37:
+        cpu_wr(c, rd, (u64)(s64)imm_u(insn));
+        break;
 
     /* ---------------------------------------------------------- AUIPC */
-    case 0x17: cpu_wr(c, rd, c->pc + (u64)(s64)imm_u(insn)); break;
+    case 0x17:
+        cpu_wr(c, rd, c->pc + (u64)(s64)imm_u(insn));
+        break;
 
     /* ------------------------------------------------------------ JAL */
     case 0x6F: {
@@ -268,7 +278,8 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
 
     /* ----------------------------------------------------------- JALR */
     case 0x67: {
-        if (f3 != 0) TRAP_ILLEGAL();
+        if (f3 != 0)
+            TRAP_ILLEGAL();
         u64 t = c->pc + (c->last_insn_len ? c->last_insn_len : 4);
         npc = (a + (u64)(s64)imm_i(insn)) & ~1ULL;
         cpu_wr(c, rd, t);
@@ -281,13 +292,26 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         s32 off = imm_b(insn);
         bool t = false;
         switch (f3) {
-        case 0x0: t = (a == b); break;
-        case 0x1: t = (a != b); break;
-        case 0x4: t = (sa < sb); break;
-        case 0x5: t = (sa >= sb); break;
-        case 0x6: t = (a < b); break;
-        case 0x7: t = (a >= b); break;
-        default: TRAP_ILLEGAL();
+        case 0x0:
+            t = (a == b);
+            break;
+        case 0x1:
+            t = (a != b);
+            break;
+        case 0x4:
+            t = (sa < sb);
+            break;
+        case 0x5:
+            t = (sa >= sb);
+            break;
+        case 0x6:
+            t = (a < b);
+            break;
+        case 0x7:
+            t = (a >= b);
+            break;
+        default:
+            TRAP_ILLEGAL();
         }
         if (t) {
             npc = c->pc + off;
@@ -301,14 +325,32 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         u32 size;
         bool uns = false;
         switch (f3) {
-        case 0x0: size = 1; break;
-        case 0x1: size = 2; break;
-        case 0x2: size = 4; break;
-        case 0x3: size = 8; break;
-        case 0x4: size = 1; uns = true; break;
-        case 0x5: size = 2; uns = true; break;
-        case 0x6: size = 4; uns = true; break;
-        default: TRAP_ILLEGAL();
+        case 0x0:
+            size = 1;
+            break;
+        case 0x1:
+            size = 2;
+            break;
+        case 0x2:
+            size = 4;
+            break;
+        case 0x3:
+            size = 8;
+            break;
+        case 0x4:
+            size = 1;
+            uns = true;
+            break;
+        case 0x5:
+            size = 2;
+            uns = true;
+            break;
+        case 0x6:
+            size = 4;
+            uns = true;
+            break;
+        default:
+            TRAP_ILLEGAL();
         }
         u64 v = 0;
         u32 cause = 0;
@@ -326,11 +368,20 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
     case 0x23: {
         u32 size;
         switch (f3) {
-        case 0x0: size = 1; break;
-        case 0x1: size = 2; break;
-        case 0x2: size = 4; break;
-        case 0x3: size = 8; break;
-        default: TRAP_ILLEGAL();
+        case 0x0:
+            size = 1;
+            break;
+        case 0x1:
+            size = 2;
+            break;
+        case 0x2:
+            size = 4;
+            break;
+        case 0x3:
+            size = 8;
+            break;
+        default:
+            TRAP_ILLEGAL();
         }
         u32 cause = 0;
         u64 addr = a + (u64)(s64)imm_s(insn);
@@ -353,21 +404,36 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
             u32 sh = (u32)(insn >> 20) & 0x3F;
             u32 f6 = (u32)(insn >> 26) & 0x3F;
             if (f3 == 0x1) {
-                if (f6 != 0x00) TRAP_ILLEGAL();
+                if (f6 != 0x00)
+                    TRAP_ILLEGAL();
                 r = a << sh;
             } else {
-                if (f6 != 0x00 && f6 != 0x10) TRAP_ILLEGAL();
+                if (f6 != 0x00 && f6 != 0x10)
+                    TRAP_ILLEGAL();
                 r = (f6 == 0x10) ? (u64)(sa >> sh) : (a >> sh);
             }
         } else {
             switch (f3) {
-            case 0x0: r = a + (u64)imm; break;
-            case 0x2: r = (u64)(sa < imm); break;          /* slti  (signed)   */
-            case 0x3: r = (u64)(a < (u64)imm); break;       /* sltiu (unsigned) */
-            case 0x4: r = a ^ (u64)imm; break;
-            case 0x6: r = a | (u64)imm; break;
-            case 0x7: r = a & (u64)imm; break;
-            default: TRAP_ILLEGAL();
+            case 0x0:
+                r = a + (u64)imm;
+                break;
+            case 0x2:
+                r = (u64)(sa < imm);
+                break; /* slti  (signed)   */
+            case 0x3:
+                r = (u64)(a < (u64)imm);
+                break; /* sltiu (unsigned) */
+            case 0x4:
+                r = a ^ (u64)imm;
+                break;
+            case 0x6:
+                r = a | (u64)imm;
+                break;
+            case 0x7:
+                r = a & (u64)imm;
+                break;
+            default:
+                TRAP_ILLEGAL();
             }
         }
         cpu_wr(c, rd, r);
@@ -380,20 +446,25 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         s32 w = (s32)a;
         s32 r = 0;
         switch (f3) {
-        case 0x0: r = w + (s32)imm; break;
+        case 0x0:
+            r = w + (s32)imm;
+            break;
         case 0x1: {
             u32 sh = (u32)(insn >> 20) & 0x1F;
-            if (f7 != 0x00) TRAP_ILLEGAL();
+            if (f7 != 0x00)
+                TRAP_ILLEGAL();
             r = (s32)((u32)w << sh);
             break;
         }
         case 0x5: {
             u32 sh = (u32)(insn >> 20) & 0x1F;
-            if (f7 != 0x00 && f7 != 0x20) TRAP_ILLEGAL();
+            if (f7 != 0x00 && f7 != 0x20)
+                TRAP_ILLEGAL();
             r = (f7 == 0x20) ? (w >> sh) : (s32)((u32)w >> sh);
             break;
         }
-        default: TRAP_ILLEGAL();
+        default:
+            TRAP_ILLEGAL();
         }
         cpu_wr(c, rd, (u64)(s64)r);
         break;
@@ -404,8 +475,12 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         u64 r = 0;
         if (f7 == 0x01) { /* M extension */
             switch (f3) {
-            case 0x0: r = (u64)(sa * sb); break;
-            case 0x1: r = (u64)(((__int128)sa * (__int128)sb) >> 64); break;
+            case 0x0:
+                r = (u64)(sa * sb);
+                break;
+            case 0x1:
+                r = (u64)(((__int128)sa * (__int128)sb) >> 64);
+                break;
             case 0x2: {
                 /* MULHSU: signed rs1 times *unsigned* rs2.  Converting the u64
                  * to __int128 preserves its value, which is exactly the
@@ -429,7 +504,9 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
                 else
                     r = (u64)(sa / sb);
                 break;
-            case 0x5: r = (b == 0) ? UINT64_MAX : a / b; break;
+            case 0x5:
+                r = (b == 0) ? UINT64_MAX : a / b;
+                break;
             case 0x6:
                 if (b == 0)
                     r = a;
@@ -438,26 +515,46 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
                 else
                     r = (u64)(sa % sb);
                 break;
-            case 0x7: r = (b == 0) ? a : a % b; break;
-            default: TRAP_ILLEGAL();
+            case 0x7:
+                r = (b == 0) ? a : a % b;
+                break;
+            default:
+                TRAP_ILLEGAL();
             }
         } else {
             /* funct7 must be 0x00 or 0x20; anything else is reserved. */
-            if (f7 != 0x00 && f7 != 0x20) TRAP_ILLEGAL();
+            if (f7 != 0x00 && f7 != 0x20)
+                TRAP_ILLEGAL();
             /* Shifts and compares only exist with funct7 = 0x00. */
-            if (f7 == 0x20 && f3 != 0x0 && f3 != 0x5) TRAP_ILLEGAL();
+            if (f7 == 0x20 && f3 != 0x0 && f3 != 0x5)
+                TRAP_ILLEGAL();
             switch (f3) {
-            case 0x0: r = (f7 == 0x20) ? (u64)(sa - sb) : a + b; break;
-            case 0x1: r = a << (b & 63); break;
-            case 0x2: r = (u64)(sa < sb); break;
-            case 0x3: r = (u64)(a < b); break;
-            case 0x4: r = a ^ b; break;
+            case 0x0:
+                r = (f7 == 0x20) ? (u64)(sa - sb) : a + b;
+                break;
+            case 0x1:
+                r = a << (b & 63);
+                break;
+            case 0x2:
+                r = (u64)(sa < sb);
+                break;
+            case 0x3:
+                r = (u64)(a < b);
+                break;
+            case 0x4:
+                r = a ^ b;
+                break;
             case 0x5:
-                if (f7 != 0x00 && f7 != 0x20) TRAP_ILLEGAL();
+                if (f7 != 0x00 && f7 != 0x20)
+                    TRAP_ILLEGAL();
                 r = (f7 == 0x20) ? (u64)(sa >> (b & 63)) : (a >> (b & 63));
                 break;
-            case 0x6: r = a | b; break;
-            case 0x7: r = a & b; break;
+            case 0x6:
+                r = a | b;
+                break;
+            case 0x7:
+                r = a & b;
+                break;
             }
         }
         cpu_wr(c, rd, r);
@@ -471,31 +568,45 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         u32 sh = (u32)(b & 31);
         if (f7 == 0x01) { /* M-extension word ops */
             switch (f3) {
-            case 0x0: r = (s32)((u32)w1 * (u32)w2); break;
+            case 0x0:
+                r = (s32)((u32)w1 * (u32)w2);
+                break;
             case 0x4:
                 r = (w2 == 0) ? -1 : (w1 == INT32_MIN && w2 == -1) ? INT32_MIN : (s32)(w1 / w2);
                 break;
-            case 0x5: r = (w2 == 0) ? -1 : (s32)((u32)w1 / (u32)w2); break;
+            case 0x5:
+                r = (w2 == 0) ? -1 : (s32)((u32)w1 / (u32)w2);
+                break;
             case 0x6:
                 r = (w2 == 0) ? w1 : (w1 == INT32_MIN && w2 == -1) ? 0 : (s32)(w1 % w2);
                 break;
-            case 0x7: r = (w2 == 0) ? w1 : (s32)((u32)w1 % (u32)w2); break;
-            default: TRAP_ILLEGAL();
+            case 0x7:
+                r = (w2 == 0) ? w1 : (s32)((u32)w1 % (u32)w2);
+                break;
+            default:
+                TRAP_ILLEGAL();
             }
         } else {
-            if (f7 != 0x00 && f7 != 0x20) TRAP_ILLEGAL();
-            if (f7 == 0x20 && f3 != 0x0 && f3 != 0x5) TRAP_ILLEGAL();
+            if (f7 != 0x00 && f7 != 0x20)
+                TRAP_ILLEGAL();
+            if (f7 == 0x20 && f3 != 0x0 && f3 != 0x5)
+                TRAP_ILLEGAL();
             switch (f3) {
-            case 0x0: r = (f7 == 0x20) ? (w1 - w2) : (w1 + w2); break;
+            case 0x0:
+                r = (f7 == 0x20) ? (w1 - w2) : (w1 + w2);
+                break;
             case 0x1:
-                if (f7 != 0x00) TRAP_ILLEGAL();
+                if (f7 != 0x00)
+                    TRAP_ILLEGAL();
                 r = (s32)((u32)w1 << sh);
                 break;
             case 0x5:
-                if (f7 != 0x00 && f7 != 0x20) TRAP_ILLEGAL();
+                if (f7 != 0x00 && f7 != 0x20)
+                    TRAP_ILLEGAL();
                 r = (f7 == 0x20) ? (w1 >> sh) : (s32)((u32)w1 >> sh);
                 break;
-            default: TRAP_ILLEGAL();
+            default:
+                TRAP_ILLEGAL();
             }
         }
         cpu_wr(c, rd, (u64)(s64)r);
@@ -508,20 +619,29 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
 
     case 0x2F: {
         u32 size = (f3 == 0x2) ? 4 : (f3 == 0x3) ? 8 : 0;
-        if (!size) TRAP_ILLEGAL();
+        if (!size)
+            TRAP_ILLEGAL();
         bool ok = true;
         do_amo(c, insn, size, res, &ok);
         /* do_amo() returns before the shared epilogue, so advance pc here. */
-        if (ok) c->pc = c->pc + (c->last_insn_len ? c->last_insn_len : 4);
+        if (ok)
+            c->pc = c->pc + (c->last_insn_len ? c->last_insn_len : 4);
         return ok;
     }
 
     /* ------------------------------------------------------ FP opcodes */
     /* LOAD-FP, STORE-FP, OP-FP and the four fused-multiply-add opcodes. */
-    case 0x07: case 0x27: case 0x53: case 0x43: case 0x47: case 0x4B: case 0x4F: {
+    case 0x07:
+    case 0x27:
+    case 0x53:
+    case 0x43:
+    case 0x47:
+    case 0x4B:
+    case 0x4F: {
         bool handled = fp_exec(c, insn, res);
         /* fp_exec() also returns before the shared epilogue. */
-        if (handled) c->pc = c->pc + (c->last_insn_len ? c->last_insn_len : 4);
+        if (handled)
+            c->pc = c->pc + (c->last_insn_len ? c->last_insn_len : 4);
         return handled;
     }
 
@@ -532,8 +652,9 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
             switch (which) {
             case 0x000: /* ecall */
                 c->n_ecalls++;
-                cpu_trap(c, c->priv == PRV_U ? EXC_ECALL_U
-                                            : (c->priv == PRV_S ? EXC_ECALL_S : EXC_ECALL_M),
+                cpu_trap(c,
+                         c->priv == PRV_U ? EXC_ECALL_U
+                                          : (c->priv == PRV_S ? EXC_ECALL_S : EXC_ECALL_M),
                          0, false);
                 *res = (c->priv == PRV_M) ? STEP_ECALL_M : STEP_TRAP;
                 /* cpu_trap moved us to M-mode; report the origin instead. */
@@ -544,14 +665,17 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
                 *res = STEP_TRAP;
                 return false;
             case 0x102: /* sret */
-                if (c->priv < PRV_S) TRAP_ILLEGAL();
-                if (c->priv == PRV_S && (c->csr[CSR_MSTATUS] & MSTATUS_TSR)) TRAP_ILLEGAL();
+                if (c->priv < PRV_S)
+                    TRAP_ILLEGAL();
+                if (c->priv == PRV_S && (c->csr[CSR_MSTATUS] & MSTATUS_TSR))
+                    TRAP_ILLEGAL();
                 cpu_sret(c);
                 npc = c->pc; /* cpu_sret() already wrote sepc into pc */
                 taken = true;
                 break;
             case 0x302: /* mret */
-                if (c->priv < PRV_M) TRAP_ILLEGAL();
+                if (c->priv < PRV_M)
+                    TRAP_ILLEGAL();
                 cpu_mret(c);
                 npc = c->pc; /* cpu_mret() already wrote mepc into pc */
                 taken = true;
@@ -561,8 +685,10 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
                 return false;
             default:
                 if ((which & 0xFE0) == 0x120) { /* sfence.vma */
-                    if (c->priv < PRV_S) TRAP_ILLEGAL();
-                    if (c->priv == PRV_S && (c->csr[CSR_MSTATUS] & MSTATUS_TVM)) TRAP_ILLEGAL();
+                    if (c->priv < PRV_S)
+                        TRAP_ILLEGAL();
+                    if (c->priv == PRV_S && (c->csr[CSR_MSTATUS] & MSTATUS_TVM))
+                        TRAP_ILLEGAL();
                     if (rs1 == 0)
                         mmu_flush(c->mmu);
                     else
@@ -579,7 +705,8 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         u64 src = imm_form ? (u64)rs1 : a;
         bool illegal = false;
         u64 old = csr_read(c, caddr, &illegal);
-        if (illegal) TRAP_ILLEGAL();
+        if (illegal)
+            TRAP_ILLEGAL();
         /* Privilege check: S-mode may not touch M-level CSRs. */
         u32 csr_priv = (caddr >> 8) & 3;
         if (c->priv < csr_priv) {
@@ -590,26 +717,37 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
         u64 nv = old;
         bool do_write = true;
         switch (f3 & 3) {
-        case 1: nv = src; break;      /* csrrw  */
-        case 2: nv = old | src; break; /* csrrs  */
-        case 3: nv = old & ~src; break;/* csrrc  */
-        default: TRAP_ILLEGAL();
+        case 1:
+            nv = src;
+            break; /* csrrw  */
+        case 2:
+            nv = old | src;
+            break; /* csrrs  */
+        case 3:
+            nv = old & ~src;
+            break; /* csrrc  */
+        default:
+            TRAP_ILLEGAL();
         }
         /* csrrs/csrrc with a zero source must not write, so that reading a CSR
          * with side effects stays side-effect free. */
-        if ((f3 & 3) != 1 && src == 0) do_write = false;
+        if ((f3 & 3) != 1 && src == 0)
+            do_write = false;
         /* csrrw with rd=x0 must not read. */
-        if ((f3 & 3) == 1 && rd == 0) old = 0;
+        if ((f3 & 3) == 1 && rd == 0)
+            old = 0;
         if (do_write) {
             bool wr_illegal = false;
             csr_write(c, caddr, nv, &wr_illegal);
-            if (wr_illegal) TRAP_ILLEGAL();
+            if (wr_illegal)
+                TRAP_ILLEGAL();
         }
         cpu_wr(c, rd, old);
         break;
     }
 
-    default: TRAP_ILLEGAL();
+    default:
+        TRAP_ILLEGAL();
     }
 
     c->pc = taken ? npc : (c->pc + (c->last_insn_len ? c->last_insn_len : 4));
@@ -618,8 +756,7 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res)
 
 /* ------------------------------------------------------- A extension AMO */
 
-static void do_amo(cpu *c, u32 insn, u32 size, step_result *res, bool *ok)
-{
+static void do_amo(cpu *c, u32 insn, u32 size, step_result *res, bool *ok) {
     u32 rd = RD(insn), rs1 = RS1(insn), rs2 = RS2(insn);
     u32 funct5 = insn >> 27;
     u64 addr = cpu_rd(c, rs1);
@@ -669,26 +806,46 @@ static void do_amo(cpu *c, u32 insn, u32 size, step_result *res, bool *ok)
      * zero-extended -- mixing the two is what makes amominu/amomaxu wrong. */
     u64 uo = (size == 4) ? (u64)(u32)old : old;
     u64 ub = (size == 4) ? (u64)(u32)b : b;
-    if (size == 4) old = (u64)(s32)(u32)old;
+    if (size == 4)
+        old = (u64)(s32)(u32)old;
     s64 so = (s64)old, sb = (size == 4) ? (s64)(s32)(u32)b : (s64)b;
     u64 r = 0;
     switch (funct5) {
-    case 0x01: r = b; break;                          /* amoswap */
-    case 0x00: r = old + b; break;                    /* amoadd  */
-    case 0x04: r = old ^ b; break;                    /* amoxor  */
-    case 0x0C: r = old & b; break;                    /* amoand  */
-    case 0x08: r = old | b; break;                    /* amoor   */
-    case 0x10: r = (u64)RVM_MIN(so, sb); break;       /* amomin  */
-    case 0x14: r = (u64)RVM_MAX(so, sb); break;       /* amomax  */
-    case 0x18: r = RVM_MIN(uo, ub); break;            /* amominu */
-    case 0x1C: r = RVM_MAX(uo, ub); break;            /* amomaxu */
+    case 0x01:
+        r = b;
+        break; /* amoswap */
+    case 0x00:
+        r = old + b;
+        break; /* amoadd  */
+    case 0x04:
+        r = old ^ b;
+        break; /* amoxor  */
+    case 0x0C:
+        r = old & b;
+        break; /* amoand  */
+    case 0x08:
+        r = old | b;
+        break; /* amoor   */
+    case 0x10:
+        r = (u64)RVM_MIN(so, sb);
+        break; /* amomin  */
+    case 0x14:
+        r = (u64)RVM_MAX(so, sb);
+        break; /* amomax  */
+    case 0x18:
+        r = RVM_MIN(uo, ub);
+        break; /* amominu */
+    case 0x1C:
+        r = RVM_MAX(uo, ub);
+        break; /* amomaxu */
     default:
         cpu_trap(c, EXC_ILLEGAL_INST, insn, false);
         *res = STEP_TRAP;
         *ok = false;
         return;
     }
-    if (size == 4) r = (u64)(s64)(s32)r;
+    if (size == 4)
+        r = (u64)(s64)(s32)r;
     c->rsrv_valid = false;
     if (!cpu_mem_store(c, addr, size, r, &cause)) {
         cpu_trap(c, cause, addr, false);
@@ -701,9 +858,9 @@ static void do_amo(cpu *c, u32 insn, u32 size, step_result *res, bool *ok)
 
 /* ------------------------------------------------------------- cpu_step */
 
-step_result cpu_step(cpu *c)
-{
-    if (c->halted) return STEP_SHUTDOWN;
+step_result cpu_step(cpu *c) {
+    if (c->halted)
+        return STEP_SHUTDOWN;
 
     c->cycles++;
 
@@ -722,7 +879,8 @@ step_result cpu_step(cpu *c)
 
     void *ud = NULL;
     rvm_trace_fn tf = rvm_trace_get(&ud);
-    if (tf) tf(ud, c->pc, insn, len);
+    if (tf)
+        tf(ud, c->pc, insn, len);
 
     if (len == 2) {
         bool illegal = false;
@@ -743,6 +901,7 @@ step_result cpu_step(cpu *c)
     }
     /* Traps still retire as an executed instruction for counting purposes,
      * but WFI/ECALL_M/SHUTDOWN must be surfaced to the run loop. */
-    if (res == STEP_TRAP) c->instret++;
+    if (res == STEP_TRAP)
+        c->instret++;
     return res;
 }

@@ -12,10 +12,9 @@
 
 /* phandle assignments must be stable: Linux resolves &cpu_intc / &plic by them. */
 #define PHANDLE_CPU_INTC 1
-#define PHANDLE_PLIC 2
+#define PHANDLE_PLIC     2
 
-static rvm_err slurp(const char *path, u8 **out, size_t *len)
-{
+static rvm_err slurp(const char *path, u8 **out, size_t *len) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
         LOG_ERROR("loader: cannot open %s: %s", path, strerror(errno));
@@ -36,12 +35,14 @@ static rvm_err slurp(const char *path, u8 **out, size_t *len)
     while (done < n) {
         ssize_t r = read(fd, buf + done, n - done);
         if (r < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             free(buf);
             close(fd);
             return RVM_ERR_IO;
         }
-        if (r == 0) break;
+        if (r == 0)
+            break;
         done += (size_t)r;
     }
     close(fd);
@@ -59,24 +60,25 @@ typedef struct {
     u16 e_ehsize, e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx;
 } elf64_hdr;
 
-static u16 rd16(const u8 *p) { return (u16)(p[0] | (p[1] << 8)); }
-static u32 rd32(const u8 *p)
-{
+static u16 rd16(const u8 *p) {
+    return (u16)(p[0] | (p[1] << 8));
+}
+static u32 rd32(const u8 *p) {
     return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
 }
-static u64 rd64(const u8 *p)
-{
+static u64 rd64(const u8 *p) {
     return (u64)rd32(p) | ((u64)rd32(p + 4) << 32);
 }
 
-rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st)
-{
+rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st) {
     u8 *img = NULL;
     size_t imglen = 0;
     rvm_err e = slurp(path, &img, &imglen);
-    if (e != RVM_OK) return e;
+    if (e != RVM_OK)
+        return e;
 
-    if (st) memset(st, 0, sizeof(*st));
+    if (st)
+        memset(st, 0, sizeof(*st));
 
     if (imglen < sizeof(elf64_hdr)) {
         LOG_ERROR("loader: %s is too small to be an ELF64 image", path);
@@ -112,7 +114,8 @@ rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st)
 
     for (u32 i = 0; i < h.e_phnum; i++) {
         size_t off = (size_t)h.e_phoff + (size_t)i * h.e_phentsize;
-        if (off + 56 > imglen) break;
+        if (off + 56 > imglen)
+            break;
         const u8 *ph = img + off;
         u32 type = rd32(ph + 0);
         u64 p_offset = rd64(ph + 8);
@@ -120,8 +123,10 @@ rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st)
         u64 p_paddr = rd64(ph + 24);
         u64 p_filesz = rd64(ph + 32);
         u64 p_memsz = rd64(ph + 40);
-        if (type != PT_LOAD) continue;
-        if (p_filesz == 0 && p_memsz == 0) continue;
+        if (type != PT_LOAD)
+            continue;
+        if (p_filesz == 0 && p_memsz == 0)
+            continue;
 
         u64 dest = p_paddr ? p_paddr : p_vaddr;
         if (p_offset + p_filesz > imglen) {
@@ -136,21 +141,26 @@ rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st)
             return RVM_ERR_RANGE;
         }
         u8 *dst = bus_ram_ptr(b, dest);
-        if (p_filesz) memcpy(dst, img + p_offset, (size_t)p_filesz);
-        if (p_memsz > p_filesz) memset(dst + p_filesz, 0, (size_t)(p_memsz - p_filesz));
+        if (p_filesz)
+            memcpy(dst, img + p_offset, (size_t)p_filesz);
+        if (p_memsz > p_filesz)
+            memset(dst + p_filesz, 0, (size_t)(p_memsz - p_filesz));
 
         if (st) {
             st->segments++;
             st->bytes += p_memsz;
-            if (st->lowest == 0 || dest < st->lowest) st->lowest = dest;
-            if (dest + p_memsz > st->highest) st->highest = dest + p_memsz;
+            if (st->lowest == 0 || dest < st->lowest)
+                st->lowest = dest;
+            if (dest + p_memsz > st->highest)
+                st->highest = dest + p_memsz;
         }
         LOG_DEBUG("loader: LOAD vaddr=0x%llx paddr=0x%llx filesz=%llu memsz=%llu",
                   (unsigned long long)p_vaddr, (unsigned long long)dest,
                   (unsigned long long)p_filesz, (unsigned long long)p_memsz);
     }
 
-    if (entry) *entry = h.e_entry;
+    if (entry)
+        *entry = h.e_entry;
     LOG_INFO("loader: %s -> entry 0x%llx, %llu segment(s), %llu KiB", path,
              (unsigned long long)h.e_entry, st ? (unsigned long long)st->segments : 0ULL,
              st ? (unsigned long long)(st->bytes >> 10) : 0ULL);
@@ -158,12 +168,12 @@ rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st)
     return RVM_OK;
 }
 
-rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size)
-{
+rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size) {
     u8 *img = NULL;
     size_t imglen = 0;
     rvm_err e = slurp(path, &img, &imglen);
-    if (e != RVM_OK) return e;
+    if (e != RVM_OK)
+        return e;
     if (!bus_ram_valid(b, addr, (u32)imglen)) {
         LOG_ERROR("loader: blob %s (%zu bytes) does not fit at 0x%llx", path, imglen,
                   (unsigned long long)addr);
@@ -171,7 +181,8 @@ rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size)
         return RVM_ERR_RANGE;
     }
     memcpy(bus_ram_ptr(b, addr), img, imglen);
-    if (size) *size = imglen;
+    if (size)
+        *size = imglen;
     LOG_INFO("loader: blob %s -> 0x%llx (%zu bytes)", path, (unsigned long long)addr, imglen);
     free(img);
     return RVM_OK;
@@ -179,13 +190,14 @@ rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size)
 
 /* ------------------------------------------------------- device tree */
 
-rvm_err dtb_build(const dtb_opts *o, u8 **out, u32 *out_len)
-{
-    if (!o || !out || !out_len) return RVM_ERR_BADARG;
+rvm_err dtb_build(const dtb_opts *o, u8 **out, u32 *out_len) {
+    if (!o || !out || !out_len)
+        return RVM_ERR_BADARG;
 
     fdt f;
     rvm_err e = fdt_init(&f);
-    if (e != RVM_OK) return e;
+    if (e != RVM_OK)
+        return e;
 
     const char *compat_root[] = {o->model ? o->model : "rvm,virt", "virtio-mmio"};
     const char *compat_clint[] = {"riscv,clint0", "sifive,clint"};
@@ -200,8 +212,10 @@ rvm_err dtb_build(const dtb_opts *o, u8 **out, u32 *out_len)
 
     /* ---- chosen ---- */
     fdt_begin_node(&f, "chosen");
-    if (o->bootargs && *o->bootargs) fdt_prop_str(&f, "bootargs", o->bootargs);
-    if (o->stdout_path && *o->stdout_path) fdt_prop_str(&f, "stdout-path", o->stdout_path);
+    if (o->bootargs && *o->bootargs)
+        fdt_prop_str(&f, "bootargs", o->bootargs);
+    if (o->stdout_path && *o->stdout_path)
+        fdt_prop_str(&f, "stdout-path", o->stdout_path);
     if (o->initrd_start && o->initrd_end > o->initrd_start) {
         fdt_prop_u64(&f, "linux,initrd-start", o->initrd_start);
         fdt_prop_u64(&f, "linux,initrd-end", o->initrd_end);
@@ -283,7 +297,8 @@ rvm_err dtb_build(const dtb_opts *o, u8 **out, u32 *out_len)
 
     /* virtio-mmio slots */
     u32 n = o->n_virtio ? o->n_virtio : RVM_VIRTIO_COUNT;
-    if (n > DTB_MAX_VIRTIO) n = DTB_MAX_VIRTIO;
+    if (n > DTB_MAX_VIRTIO)
+        n = DTB_MAX_VIRTIO;
     for (u32 i = 0; i < n; i++) {
         u64 base = RVM_VIRTIO_BASE + i * RVM_VIRTIO_STRIDE;
         char nm[48];

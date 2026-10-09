@@ -23,8 +23,7 @@ typedef struct virtio_blk_req_hdr {
 
 /* ------------------------------------------------------------- backend */
 
-static void blk_read_config(virtio *v, u32 off, u32 len, u8 *out)
-{
+static void blk_read_config(virtio *v, u32 off, u32 len, u8 *out) {
     virtio_blk *b = (virtio_blk *)v->be;
     u8 cfg[64];
     memset(cfg, 0, sizeof(cfg));
@@ -38,8 +37,7 @@ static void blk_read_config(virtio *v, u32 off, u32 len, u8 *out)
     }
 }
 
-static void blk_write_config(virtio *v, u32 off, u32 len, const u8 *in)
-{
+static void blk_write_config(virtio *v, u32 off, u32 len, const u8 *in) {
     RVM_UNUSED(v);
     RVM_UNUSED(off);
     RVM_UNUSED(len);
@@ -47,15 +45,13 @@ static void blk_write_config(virtio *v, u32 off, u32 len, const u8 *in)
     /* Nothing in the block config is driver-writable for us. */
 }
 
-static void blk_reset(virtio *v)
-{
+static void blk_reset(virtio *v) {
     virtio_blk *b = (virtio_blk *)v->be;
     LOG_DEBUG("virtio-blk: reset (reads=%llu writes=%llu)", (unsigned long long)b->n_read,
               (unsigned long long)b->n_write);
 }
 
-static bool do_io(virtio_blk *b, u32 type, u64 sector, u8 *buf, u32 len, bool to_guest)
-{
+static bool do_io(virtio_blk *b, u32 type, u64 sector, u8 *buf, u32 len, bool to_guest) {
     off_t off = (off_t)(sector * VIRTIO_BLK_SECTOR_SIZE);
     u32 done = 0;
     while (done < len) {
@@ -65,19 +61,20 @@ static bool do_io(virtio_blk *b, u32 type, u64 sector, u8 *buf, u32 len, bool to
         else
             n = pwrite(b->fd, buf + done, len - done, off + done);
         if (n < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             LOG_ERROR("virtio-blk: %s at sector %llu failed: %s", to_guest ? "read" : "write",
                       (unsigned long long)sector, strerror(errno));
             return false;
         }
-        if (n == 0) break; /* EOF: leave the remainder zero filled */
+        if (n == 0)
+            break; /* EOF: leave the remainder zero filled */
         done += (u32)n;
     }
     return true;
 }
 
-static void blk_notify(virtio *v, u32 qidx)
-{
+static void blk_notify(virtio *v, u32 qidx) {
     virtio_blk *b = (virtio_blk *)v->be;
     vq_chain ch;
 
@@ -88,7 +85,8 @@ static void blk_notify(virtio *v, u32 qidx)
         for (u32 i = 0; i < ch.n; i++) {
             if (!ch.iov[i].write && hdr_i < 0 && ch.iov[i].len >= sizeof(virtio_blk_req_hdr))
                 hdr_i = (s32)i;
-            if (ch.iov[i].write && ch.iov[i].len >= 1) status_i = (s32)i;
+            if (ch.iov[i].write && ch.iov[i].len >= 1)
+                status_i = (s32)i;
         }
         if (hdr_i < 0 || status_i < 0) {
             u8 st = VIRTIO_BLK_S_IOERR;
@@ -114,7 +112,8 @@ static void blk_notify(virtio *v, u32 qidx)
         case VIRTIO_BLK_T_IN: {
             b->n_read++;
             for (s32 i = hdr_i + 1; i < status_i; i++) {
-                if (!ch.iov[i].write) continue;
+                if (!ch.iov[i].write)
+                    continue;
                 u32 len = ch.iov[i].len;
                 u8 *tmp = (u8 *)malloc(len);
                 if (!tmp) {
@@ -129,7 +128,8 @@ static void blk_notify(virtio *v, u32 qidx)
                     status = VIRTIO_BLK_S_IOERR;
                 }
                 free(tmp);
-                if (status != VIRTIO_BLK_S_OK) break;
+                if (status != VIRTIO_BLK_S_OK)
+                    break;
             }
             break;
         }
@@ -140,7 +140,8 @@ static void blk_notify(virtio *v, u32 qidx)
             }
             b->n_write++;
             for (s32 i = hdr_i + 1; i < status_i; i++) {
-                if (ch.iov[i].write) continue;
+                if (ch.iov[i].write)
+                    continue;
                 u32 len = ch.iov[i].len;
                 u8 *tmp = (u8 *)malloc(len);
                 if (!tmp) {
@@ -154,7 +155,8 @@ static void blk_notify(virtio *v, u32 qidx)
                     status = VIRTIO_BLK_S_IOERR;
                 }
                 free(tmp);
-                if (status != VIRTIO_BLK_S_OK) break;
+                if (status != VIRTIO_BLK_S_OK)
+                    break;
             }
             break;
         }
@@ -165,7 +167,8 @@ static void blk_notify(virtio *v, u32 qidx)
             break;
         case VIRTIO_BLK_T_GET_ID: {
             for (s32 i = hdr_i + 1; i < status_i; i++) {
-                if (!ch.iov[i].write) continue;
+                if (!ch.iov[i].write)
+                    continue;
                 u32 len = RVM_MIN(ch.iov[i].len, (u32)strlen(b->id));
                 vq_write(v, &ch.iov[i], b->id, len);
                 written += len;
@@ -181,19 +184,21 @@ static void blk_notify(virtio *v, u32 qidx)
 
         vq_write(v, &ch.iov[status_i], &status, 1);
         vq_done(v, qidx, &ch, written);
-        if (status != VIRTIO_BLK_S_OK) b->n_err++;
+        if (status != VIRTIO_BLK_S_OK)
+            b->n_err++;
     }
 }
 
 /* --------------------------------------------------------------- setup */
 
-rvm_err virtio_blk_open(virtio_blk *b, const char *path, u64 bytes, bool create)
-{
-    if (!b || !path) return RVM_ERR_BADARG;
+rvm_err virtio_blk_open(virtio_blk *b, const char *path, u64 bytes, bool create) {
+    if (!b || !path)
+        return RVM_ERR_BADARG;
     memset(b, 0, sizeof(*b));
 
     int flags = O_RDWR;
-    if (create) flags |= O_CREAT;
+    if (create)
+        flags |= O_CREAT;
     b->fd = open(path, flags, 0644);
     if (b->fd < 0) {
         if (create) {
@@ -209,7 +214,8 @@ rvm_err virtio_blk_open(virtio_blk *b, const char *path, u64 bytes, bool create)
     }
 
     off_t sz = lseek(b->fd, 0, SEEK_END);
-    if (sz < 0) sz = 0;
+    if (sz < 0)
+        sz = 0;
     if (create && bytes && (u64)sz < bytes) {
         if (ftruncate(b->fd, (off_t)bytes) != 0) {
             LOG_ERROR("virtio-blk: cannot size %s to %llu bytes: %s", path,
@@ -237,16 +243,19 @@ rvm_err virtio_blk_open(virtio_blk *b, const char *path, u64 bytes, bool create)
     b->be.read_config = blk_read_config;
     b->be.write_config = blk_write_config;
 
-    LOG_INFO("virtio-blk: %s -> %llu sectors (%llu MiB)", path,
-             (unsigned long long)b->capacity, (unsigned long long)(sz >> 20));
+    LOG_INFO("virtio-blk: %s -> %llu sectors (%llu MiB)", path, (unsigned long long)b->capacity,
+             (unsigned long long)(sz >> 20));
     return RVM_OK;
 }
 
-void virtio_blk_close(virtio_blk *b)
-{
-    if (!b) return;
-    if (b->fd >= 0) close(b->fd);
+void virtio_blk_close(virtio_blk *b) {
+    if (!b)
+        return;
+    if (b->fd >= 0)
+        close(b->fd);
     b->fd = -1;
 }
 
-virtio_backend *virtio_blk_backend(virtio_blk *b) { return b ? &b->be : NULL; }
+virtio_backend *virtio_blk_backend(virtio_blk *b) {
+    return b ? &b->be : NULL;
+}

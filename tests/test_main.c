@@ -14,26 +14,26 @@ const char *g_current = "";
 
 static int g_verbose = 0;
 
-void test_begin(const char *name)
-{
+void test_begin(const char *name) {
     g_current = name;
     g_failed = 0;
-    if (g_verbose) printf("  %-28s ", name);
+    if (g_verbose)
+        printf("  %-28s ", name);
 }
 
-int test_end(void)
-{
+int test_end(void) {
     if (g_failed == 0) {
-        if (g_verbose) printf("ok\n");
+        if (g_verbose)
+            printf("ok\n");
     } else {
-        if (!g_verbose) printf("  %-28s ", g_current);
+        if (!g_verbose)
+            printf("  %-28s ", g_current);
         printf("FAILED (%d)\n", g_failed);
     }
     return g_failed != 0;
 }
 
-void test_failf(const char *file, int line, const char *fmt, ...)
-{
+void test_failf(const char *file, int line, const char *fmt, ...) {
     g_failed++;
     if (!g_verbose) {
         printf("  %-28s ", g_current);
@@ -46,16 +46,14 @@ void test_failf(const char *file, int line, const char *fmt, ...)
     printf("\n");
 }
 
-void test_summary(int suites_failed, int suites_run)
-{
+void test_summary(int suites_failed, int suites_run) {
     RVM_UNUSED(suites_failed);
     RVM_UNUSED(suites_run);
 }
 
 /* ------------------------------------------------------------- suites */
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     g_verbose = (argc > 1 && strcmp(argv[1], "-v") == 0);
     /* Keep the library quiet unless a test explicitly asks for logs. */
     rvm_log_set_level(RVM_LOG_ERROR);

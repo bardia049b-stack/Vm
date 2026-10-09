@@ -16,41 +16,40 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#define REG_MAGIC 0x000
-#define REG_VERSION 0x004
-#define REG_DEVICE_ID 0x008
-#define REG_VENDOR_ID 0x00C
-#define REG_DEVICE_FEATURES 0x010
+#define REG_MAGIC               0x000
+#define REG_VERSION             0x004
+#define REG_DEVICE_ID           0x008
+#define REG_VENDOR_ID           0x00C
+#define REG_DEVICE_FEATURES     0x010
 #define REG_DEVICE_FEATURES_SEL 0x014
-#define REG_DRIVER_FEATURES 0x020
+#define REG_DRIVER_FEATURES     0x020
 #define REG_DRIVER_FEATURES_SEL 0x024
-#define REG_QUEUE_SEL 0x030
-#define REG_QUEUE_NUM_MAX 0x034
-#define REG_QUEUE_NUM 0x038
-#define REG_QUEUE_READY 0x044
-#define REG_QUEUE_NOTIFY 0x050
-#define REG_INTERRUPT_STATUS 0x060
-#define REG_INTERRUPT_ACK 0x064
-#define REG_STATUS 0x070
-#define REG_QUEUE_DESC_LO 0x080
-#define REG_QUEUE_DESC_HI 0x084
-#define REG_QUEUE_DRIVER_LO 0x090
-#define REG_QUEUE_DRIVER_HI 0x094
-#define REG_QUEUE_DEVICE_LO 0x0A0
-#define REG_QUEUE_DEVICE_HI 0x0A4
-#define REG_CONFIG 0x100
+#define REG_QUEUE_SEL           0x030
+#define REG_QUEUE_NUM_MAX       0x034
+#define REG_QUEUE_NUM           0x038
+#define REG_QUEUE_READY         0x044
+#define REG_QUEUE_NOTIFY        0x050
+#define REG_INTERRUPT_STATUS    0x060
+#define REG_INTERRUPT_ACK       0x064
+#define REG_STATUS              0x070
+#define REG_QUEUE_DESC_LO       0x080
+#define REG_QUEUE_DESC_HI       0x084
+#define REG_QUEUE_DRIVER_LO     0x090
+#define REG_QUEUE_DRIVER_HI     0x094
+#define REG_QUEUE_DEVICE_LO     0x0A0
+#define REG_QUEUE_DEVICE_HI     0x0A4
+#define REG_CONFIG              0x100
 
-#define VRING_NEXT 1
+#define VRING_NEXT  1
 #define VRING_WRITE 2
 
-static void test_raise(void *ud, u32 irq, bool level)
-{
+static void test_raise(void *ud, u32 irq, bool level) {
     plic *p = (plic *)ud;
-    if (level) plic_raise(p, irq);
+    if (level)
+        plic_raise(p, irq);
 }
 
-void test_virtio_transport(void)
-{
+void test_virtio_transport(void) {
     bus b;
     CHECK(bus_init(&b, 16ULL << 20) == RVM_OK);
 
@@ -135,14 +134,12 @@ typedef struct {
     u16 next;
 } __attribute__((packed)) test_vring_desc;
 
-static void put_desc(bus *b, u64 tbl, u32 i, u64 addr, u32 len, u16 flags, u16 next)
-{
+static void put_desc(bus *b, u64 tbl, u32 i, u64 addr, u32 len, u16 flags, u16 next) {
     test_vring_desc d = {addr, len, flags, next};
     bus_write_bytes(b, tbl + 16ULL * i, &d, sizeof(d));
 }
 
-void test_virtio_blk_roundtrip(void)
-{
+void test_virtio_blk_roundtrip(void) {
     bus b;
     CHECK(bus_init(&b, 16ULL << 20) == RVM_OK);
     plic p;
@@ -161,8 +158,8 @@ void test_virtio_blk_roundtrip(void)
     virtio_store(&dev, REG_STATUS, 4, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
     virtio_store(&dev, REG_DRIVER_FEATURES_SEL, 4, 1);
     virtio_store(&dev, REG_DRIVER_FEATURES, 4, 1u << (VIRTIO_F_VERSION_1 - 32));
-    virtio_store(&dev, REG_STATUS, 4, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                                          VIRTIO_STATUS_FEATURES_OK);
+    virtio_store(&dev, REG_STATUS, 4,
+                 VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK);
     u64 st = 0;
     virtio_load(&dev, REG_STATUS, 4, &st);
     CHECK_U64(st & VIRTIO_STATUS_FEATURES_OK, VIRTIO_STATUS_FEATURES_OK);
@@ -185,13 +182,15 @@ void test_virtio_blk_roundtrip(void)
     virtio_store(&dev, REG_QUEUE_DEVICE_LO, 4, (u32)USED);
     virtio_store(&dev, REG_QUEUE_DEVICE_HI, 4, (u32)(USED >> 32));
     virtio_store(&dev, REG_QUEUE_READY, 4, 1);
-    virtio_store(&dev, REG_STATUS, 4, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                                          VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
+    virtio_store(&dev, REG_STATUS, 4,
+                 VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK |
+                     VIRTIO_STATUS_DRIVER_OK);
     CHECK(dev.driver_ok);
 
     /* ---- request 1: write one sector to the disk ---- */
     u8 pattern[512];
-    for (u32 i = 0; i < sizeof(pattern); i++) pattern[i] = (u8)(i * 7 + 3);
+    for (u32 i = 0; i < sizeof(pattern); i++)
+        pattern[i] = (u8)(i * 7 + 3);
 
     u8 hdr[16];
     memset(hdr, 0, sizeof(hdr));

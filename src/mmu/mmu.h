@@ -14,8 +14,8 @@
 
 #include "../rvm.h"
 
-#define MMU_TLB_BITS 6 /* 64 entries, direct mapped -- cheap and cache friendly */
-#define MMU_TLB_SIZE (1u << MMU_TLB_BITS)
+#define MMU_TLB_BITS  6 /* 64 entries, direct mapped -- cheap and cache friendly */
+#define MMU_TLB_SIZE  (1u << MMU_TLB_BITS)
 #define MMU_PAGE_SIZE 4096ULL
 
 struct bus;
@@ -27,7 +27,7 @@ typedef struct tlb_entry {
     u32 perm;     /* PTE_R|PTE_W|PTE_X|PTE_U bits of the leaf */
     u32 mode;     /* satp mode that produced this entry */
     u32 asid;
-    u64 tag;      /* monotonically increasing satp signature, invalidates all */
+    u64 tag; /* monotonically increasing satp signature, invalidates all */
     bool valid;
 } tlb_entry;
 

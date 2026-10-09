@@ -34,9 +34,9 @@ typedef struct bus_device {
 } bus_device;
 
 typedef struct bus {
-    u8 *ram;       /* maps to guest physical RVM_RAM_BASE */
+    u8 *ram; /* maps to guest physical RVM_RAM_BASE */
     u64 ram_size;
-    u64 ram_base;  /* == RVM_RAM_BASE, kept for flexibility */
+    u64 ram_base; /* == RVM_RAM_BASE, kept for flexibility */
 
     bus_device devs[RVM_BUS_MAX_DEVICES];
     u32 ndev;
@@ -48,19 +48,18 @@ typedef struct bus {
 rvm_err bus_init(bus *b, u64 ram_size);
 void bus_free(bus *b);
 
-rvm_err bus_attach(bus *b, const char *name, u64 base, u64 size, void *dev,
-                   bus_read_fn rd, bus_write_fn wr);
+rvm_err bus_attach(bus *b, const char *name, u64 base, u64 size, void *dev, bus_read_fn rd,
+                   bus_write_fn wr);
 
 /* Guest-physical RAM helpers.  addr must be inside the RAM window. */
-static inline bool bus_ram_valid(const bus *b, u64 addr, u32 size)
-{
-    if (addr < b->ram_base) return false;
+static inline bool bus_ram_valid(const bus *b, u64 addr, u32 size) {
+    if (addr < b->ram_base)
+        return false;
     u64 off = addr - b->ram_base;
     return off + size <= b->ram_size && off + size >= off; /* overflow guard */
 }
 
-static inline u8 *bus_ram_ptr(bus *b, u64 addr)
-{
+static inline u8 *bus_ram_ptr(bus *b, u64 addr) {
     return b->ram + (addr - b->ram_base);
 }
 

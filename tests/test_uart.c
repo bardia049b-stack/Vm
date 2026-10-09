@@ -10,8 +10,7 @@
  * base with lui, then a pair of addi/sb per character.  This is the same path
  * the Linux 8250 driver takes, only without the driver.
  */
-void test_uart_hello(void)
-{
+void test_uart_hello(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
 
@@ -30,8 +29,7 @@ void test_uart_hello(void)
 }
 
 /* DLAB, the receive FIFO, LSR bits and the interrupt line into the PLIC. */
-void test_uart_fifo_irq(void)
-{
+void test_uart_fifo_irq(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
 

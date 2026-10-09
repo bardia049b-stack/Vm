@@ -26,22 +26,22 @@ typedef struct vm_opts {
     u64 ram_size;
 
     const char *kernel_path;
-    const char *dtb_path;     /* NULL -> build the DTB in-process */
-    const char *initrd_path;  /* optional */
-    const char *disk_path;    /* optional: enables /dev/vda */
+    const char *dtb_path;    /* NULL -> build the DTB in-process */
+    const char *initrd_path; /* optional */
+    const char *disk_path;   /* optional: enables /dev/vda */
     bool create_disk;
     u64 disk_size;
 
     const char *bootargs;
-    const char *isa;          /* default "rv64imafdc" */
-    const char *mmu_type;     /* default "riscv,sv57" */
+    const char *isa;      /* default "rv64imafdc" */
+    const char *mmu_type; /* default "riscv,sv57" */
 
-    u64 entry_override;       /* 0 -> use the ELF entry point */
-    u64 dtb_addr;             /* 0 -> RVM_DTB_DEFAULT_ADDR */
-    u64 initrd_addr;          /* 0 -> RVM_INITRD_DEFAULT_ADDR */
-    bool raw_kernel;          /* true -> kernel_path is a raw Image, not ELF */
+    u64 entry_override; /* 0 -> use the ELF entry point */
+    u64 dtb_addr;       /* 0 -> RVM_DTB_DEFAULT_ADDR */
+    u64 initrd_addr;    /* 0 -> RVM_INITRD_DEFAULT_ADDR */
+    bool raw_kernel;    /* true -> kernel_path is a raw Image, not ELF */
 
-    u64 max_insns;            /* 0 -> run forever */
+    u64 max_insns; /* 0 -> run forever */
     bool trace;
     rvm_loglevel log_level;
 

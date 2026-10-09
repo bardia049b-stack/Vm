@@ -12,53 +12,50 @@
 
 #define RVM_VERSION "0.1.0"
 
-static void usage(const char *prog)
-{
-    printf(
-        "rvm %s -- a small RV64GC system emulator\n"
-        "\n"
-        "usage: %s [options]\n"
-        "\n"
-        "machine\n"
-        "  -m, --mem MIB        guest RAM in MiB (default 1024, min 8, max 8192)\n"
-        "  -k, --kernel PATH    kernel image: ELF64 vmlinux, or raw Image with --raw\n"
-        "      --raw            treat --kernel as a raw Linux Image, not an ELF\n"
-        "  -e, --entry HEX      override the kernel entry address\n"
-        "  -t, --dtb PATH       use an external DTB (default: build one in-process)\n"
-        "      --dump-dtb PATH  build the device tree, write it to PATH and exit\n"
-        "  -i, --initrd PATH    initrd/initramfs image\n"
-        "  -d, --disk PATH      virtio-blk backing file; becomes /dev/vda\n"
-        "      --create-disk    create the disk file if missing\n"
-        "      --disk-size MIB  size used together with --create-disk (default 2048)\n"
-        "  -B, --bootargs STR   kernel command line\n"
-        "      --isa STR        ISA string in the DTB (default rv64imafdc)\n"
-        "      --mmu-type STR   DTB mmu-type (default riscv,sv57)\n"
-        "\n"
-        "control\n"
-        "  -n, --insns N        stop after N instructions (0 = unlimited)\n"
-        "      --stats          print counters on exit\n"
-        "      --trace          log every retired instruction\n"
-        "  -v, --verbose        debug logging\n"
-        "  -q, --quiet          only warnings and errors\n"
-        "      --version        print the version and exit\n"
-        "  -h, --help           this message\n"
-        "\n"
-        "example\n"
-        "  %s -m 1024 -k vmlinux -d disk.img --create-disk\n",
-        RVM_VERSION, prog, prog);
+static void usage(const char *prog) {
+    printf("rvm %s -- a small RV64GC system emulator\n"
+           "\n"
+           "usage: %s [options]\n"
+           "\n"
+           "machine\n"
+           "  -m, --mem MIB        guest RAM in MiB (default 1024, min 8, max 8192)\n"
+           "  -k, --kernel PATH    kernel image: ELF64 vmlinux, or raw Image with --raw\n"
+           "      --raw            treat --kernel as a raw Linux Image, not an ELF\n"
+           "  -e, --entry HEX      override the kernel entry address\n"
+           "  -t, --dtb PATH       use an external DTB (default: build one in-process)\n"
+           "      --dump-dtb PATH  build the device tree, write it to PATH and exit\n"
+           "  -i, --initrd PATH    initrd/initramfs image\n"
+           "  -d, --disk PATH      virtio-blk backing file; becomes /dev/vda\n"
+           "      --create-disk    create the disk file if missing\n"
+           "      --disk-size MIB  size used together with --create-disk (default 2048)\n"
+           "  -B, --bootargs STR   kernel command line\n"
+           "      --isa STR        ISA string in the DTB (default rv64imafdc)\n"
+           "      --mmu-type STR   DTB mmu-type (default riscv,sv57)\n"
+           "\n"
+           "control\n"
+           "  -n, --insns N        stop after N instructions (0 = unlimited)\n"
+           "      --stats          print counters on exit\n"
+           "      --trace          log every retired instruction\n"
+           "  -v, --verbose        debug logging\n"
+           "  -q, --quiet          only warnings and errors\n"
+           "      --version        print the version and exit\n"
+           "  -h, --help           this message\n"
+           "\n"
+           "example\n"
+           "  %s -m 1024 -k vmlinux -d disk.img --create-disk\n",
+           RVM_VERSION, prog, prog);
 }
 
-static u64 parse_u64(const char *s, bool *ok)
-{
+static u64 parse_u64(const char *s, bool *ok) {
     char *end = NULL;
     errno = 0;
     unsigned long long v = strtoull(s, &end, 0);
-    if (ok) *ok = (end && *end == '\0' && errno == 0);
+    if (ok)
+        *ok = (end && *end == '\0' && errno == 0);
     return (u64)v;
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     vm_opts o;
     vm_opts_default(&o);
 
@@ -68,43 +65,95 @@ int main(int argc, char **argv)
     u64 disk_mib = 2048;
     bool mem_ok = true, insns_ok = true;
 
-    static struct option longs[] = {
-        {"mem", required_argument, 0, 'm'},       {"kernel", required_argument, 0, 'k'},
-        {"entry", required_argument, 0, 'e'},     {"dtb", required_argument, 0, 't'},
-        {"initrd", required_argument, 0, 'i'},    {"disk", required_argument, 0, 'd'},
-        {"bootargs", required_argument, 0, 'B'},  {"insns", required_argument, 0, 'n'},
-        {"verbose", no_argument, 0, 'v'},         {"quiet", no_argument, 0, 'q'},
-        {"help", no_argument, 0, 'h'},            {"version", no_argument, 0, 1000},
-        {"stats", no_argument, 0, 1001},          {"trace", no_argument, 0, 1002},
-        {"raw", no_argument, 0, 1003},            {"create-disk", no_argument, 0, 1004},
-        {"disk-size", required_argument, 0, 1005}, {"dump-dtb", required_argument, 0, 1006},
-        {"isa", required_argument, 0, 1007},      {"mmu-type", required_argument, 0, 1008},
-        {0, 0, 0, 0}};
+    static struct option longs[] = {{"mem", required_argument, 0, 'm'},
+                                    {"kernel", required_argument, 0, 'k'},
+                                    {"entry", required_argument, 0, 'e'},
+                                    {"dtb", required_argument, 0, 't'},
+                                    {"initrd", required_argument, 0, 'i'},
+                                    {"disk", required_argument, 0, 'd'},
+                                    {"bootargs", required_argument, 0, 'B'},
+                                    {"insns", required_argument, 0, 'n'},
+                                    {"verbose", no_argument, 0, 'v'},
+                                    {"quiet", no_argument, 0, 'q'},
+                                    {"help", no_argument, 0, 'h'},
+                                    {"version", no_argument, 0, 1000},
+                                    {"stats", no_argument, 0, 1001},
+                                    {"trace", no_argument, 0, 1002},
+                                    {"raw", no_argument, 0, 1003},
+                                    {"create-disk", no_argument, 0, 1004},
+                                    {"disk-size", required_argument, 0, 1005},
+                                    {"dump-dtb", required_argument, 0, 1006},
+                                    {"isa", required_argument, 0, 1007},
+                                    {"mmu-type", required_argument, 0, 1008},
+                                    {0, 0, 0, 0}};
 
     int c;
     while ((c = getopt_long(argc, argv, "m:k:e:t:i:d:B:n:vqh", longs, NULL)) != -1) {
         switch (c) {
-        case 'm': o.ram_size = parse_u64(optarg, &mem_ok) << 20; break;
-        case 'k': o.kernel_path = optarg; break;
-        case 'e': o.entry_override = parse_u64(optarg, NULL); break;
-        case 't': o.dtb_path = optarg; break;
-        case 'i': o.initrd_path = optarg; break;
-        case 'd': o.disk_path = optarg; break;
-        case 'B': o.bootargs = optarg; break;
-        case 'n': o.max_insns = parse_u64(optarg, &insns_ok); break;
-        case 'v': o.log_level = RVM_LOG_DEBUG; break;
-        case 'q': o.log_level = RVM_LOG_WARN; break;
-        case 'h': usage(argv[0]); return 0;
-        case 1000: printf("rvm %s\n", RVM_VERSION); return 0;
-        case 1001: want_stats = true; break;
-        case 1002: o.trace = true; o.log_level = RVM_LOG_TRACE; break;
-        case 1003: raw = true; break;
-        case 1004: o.create_disk = true; break;
-        case 1005: disk_mib = parse_u64(optarg, NULL); break;
-        case 1006: snprintf(dump_dtb_path, sizeof(dump_dtb_path), "%s", optarg); break;
-        case 1007: o.isa = optarg; break;
-        case 1008: o.mmu_type = optarg; break;
-        default: usage(argv[0]); return 2;
+        case 'm':
+            o.ram_size = parse_u64(optarg, &mem_ok) << 20;
+            break;
+        case 'k':
+            o.kernel_path = optarg;
+            break;
+        case 'e':
+            o.entry_override = parse_u64(optarg, NULL);
+            break;
+        case 't':
+            o.dtb_path = optarg;
+            break;
+        case 'i':
+            o.initrd_path = optarg;
+            break;
+        case 'd':
+            o.disk_path = optarg;
+            break;
+        case 'B':
+            o.bootargs = optarg;
+            break;
+        case 'n':
+            o.max_insns = parse_u64(optarg, &insns_ok);
+            break;
+        case 'v':
+            o.log_level = RVM_LOG_DEBUG;
+            break;
+        case 'q':
+            o.log_level = RVM_LOG_WARN;
+            break;
+        case 'h':
+            usage(argv[0]);
+            return 0;
+        case 1000:
+            printf("rvm %s\n", RVM_VERSION);
+            return 0;
+        case 1001:
+            want_stats = true;
+            break;
+        case 1002:
+            o.trace = true;
+            o.log_level = RVM_LOG_TRACE;
+            break;
+        case 1003:
+            raw = true;
+            break;
+        case 1004:
+            o.create_disk = true;
+            break;
+        case 1005:
+            disk_mib = parse_u64(optarg, NULL);
+            break;
+        case 1006:
+            snprintf(dump_dtb_path, sizeof(dump_dtb_path), "%s", optarg);
+            break;
+        case 1007:
+            o.isa = optarg;
+            break;
+        case 1008:
+            o.mmu_type = optarg;
+            break;
+        default:
+            usage(argv[0]);
+            return 2;
         }
     }
 
@@ -177,7 +226,8 @@ int main(int argc, char **argv)
     }
 
     e = vm_run(&v);
-    if (want_stats || e != RVM_OK) vm_print_stats(&v);
+    if (want_stats || e != RVM_OK)
+        vm_print_stats(&v);
 
     u32 code = v.exit_code;
     vm_free(&v);

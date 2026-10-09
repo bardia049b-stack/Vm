@@ -9,11 +9,11 @@
 #include "../rvm.h"
 
 #define CLINT_TIMEBASE_HZ 10000000ULL /* 10 MHz, same as QEMU virt */
-#define CLINT_NUM_HARTS 1
+#define CLINT_NUM_HARTS   1
 
-#define CLINT_MSIP_OFF 0x0000ULL
+#define CLINT_MSIP_OFF     0x0000ULL
 #define CLINT_MTIMECMP_OFF 0x4000ULL
-#define CLINT_MTIME_OFF 0xBFF8ULL
+#define CLINT_MTIME_OFF    0xBFF8ULL
 
 typedef struct clint {
     u32 msip[CLINT_NUM_HARTS];

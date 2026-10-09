@@ -15,9 +15,9 @@
 #include "../vm/vm.h"
 
 typedef struct ui_stdio {
-    bool raw_mode;   /* terminal put into raw mode for interactive use */
+    bool raw_mode; /* terminal put into raw mode for interactive use */
     bool ok;
-    void *saved;     /* opaque termios backup */
+    void *saved; /* opaque termios backup */
 } ui_stdio;
 
 /* Enter raw, non-blocking mode so keystrokes reach the guest one at a time. */

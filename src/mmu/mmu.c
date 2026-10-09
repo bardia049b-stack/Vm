@@ -4,64 +4,68 @@
 #include "../bus/bus.h"
 #include "../cpu/cpu.h" /* PTE_* / SATP_MODE_* / ACC_* / EXC_* */
 
-rvm_err mmu_init(mmu *m, struct bus *b)
-{
-    if (!m || !b) return RVM_ERR_BADARG;
+rvm_err mmu_init(mmu *m, struct bus *b) {
+    if (!m || !b)
+        return RVM_ERR_BADARG;
     memset(m, 0, sizeof(*m));
     m->bus = b;
     m->tag = 1;
     return RVM_OK;
 }
 
-void mmu_free(mmu *m)
-{
-    if (!m) return;
+void mmu_free(mmu *m) {
+    if (!m)
+        return;
     memset(m, 0, sizeof(*m));
 }
 
-void mmu_flush(mmu *m)
-{
+void mmu_flush(mmu *m) {
     m->tag++; /* every cached entry carries an older tag, so all miss */
-    for (u32 i = 0; i < MMU_TLB_SIZE; i++) m->tlb[i].valid = false;
+    for (u32 i = 0; i < MMU_TLB_SIZE; i++)
+        m->tlb[i].valid = false;
 }
 
-void mmu_flush_page(mmu *m, u64 va)
-{
+void mmu_flush_page(mmu *m, u64 va) {
     u64 page = va & ~(MMU_PAGE_SIZE - 1);
     tlb_entry *e = &m->tlb[(page >> 12) & (MMU_TLB_SIZE - 1)];
-    if (e->valid && e->va_page == page && e->tag == m->tag) e->valid = false;
+    if (e->valid && e->va_page == page && e->tag == m->tag)
+        e->valid = false;
 }
 
-static u32 levels_for(u64 mode)
-{
+static u32 levels_for(u64 mode) {
     switch (mode) {
-    case SATP_MODE_SV39: return 3;
-    case SATP_MODE_SV48: return 4;
-    case SATP_MODE_SV57: return 5;
-    default: return 0;
+    case SATP_MODE_SV39:
+        return 3;
+    case SATP_MODE_SV48:
+        return 4;
+    case SATP_MODE_SV57:
+        return 5;
+    default:
+        return 0;
     }
 }
 
 /* VA must be canonical for the mode, i.e. sign-extended from bit (12+9*lv). */
-static bool va_canonical(u64 va, u32 levels)
-{
+static bool va_canonical(u64 va, u32 levels) {
     u32 top = 12 + 9 * levels; /* highest meaningful bit index + 1 */
-    if (top >= 64) return true;
+    if (top >= 64)
+        return true;
     u64 hi = va >> (top - 1);
     return hi == 0 || hi == ((1ULL << (64 - (top - 1))) - 1);
 }
 
-static u32 fault_cause(u32 acc)
-{
+static u32 fault_cause(u32 acc) {
     switch (acc) {
-    case ACC_EXEC: return EXC_INST_PAGE_FAULT;
-    case ACC_LOAD: return EXC_LOAD_PAGE_FAULT;
-    default: return EXC_STORE_PAGE_FAULT;
+    case ACC_EXEC:
+        return EXC_INST_PAGE_FAULT;
+    case ACC_LOAD:
+        return EXC_LOAD_PAGE_FAULT;
+    default:
+        return EXC_STORE_PAGE_FAULT;
     }
 }
 
-mmu_xlat mmu_translate(mmu *m, u64 va, u32 eff_priv, u64 satp, bool mxr, bool sum, u32 acc)
-{
+mmu_xlat mmu_translate(mmu *m, u64 va, u32 eff_priv, u64 satp, bool mxr, bool sum, u32 acc) {
     mmu_xlat r = {false, 0, fault_cause(acc)};
 
     u64 mode = (satp >> 60) & 0xF;
@@ -203,7 +207,8 @@ mmu_xlat mmu_translate(mmu *m, u64 va, u32 eff_priv, u64 satp, bool mxr, bool su
         for (s32 i = (s32)levels - 1; i > (s32)leaf_level; i--) {
             vpn_acc = (va >> (12 + 9 * i)) & 0x1FF;
             u64 tmp = 0;
-            if (!bus_load(m->bus, base + vpn_acc * 8, 8, &tmp)) break;
+            if (!bus_load(m->bus, base + vpn_acc * 8, 8, &tmp))
+                break;
             base = ((tmp & PTE_PPN) >> 10) << 12;
         }
         vpn_acc = (va >> (12 + 9 * leaf_level)) & 0x1FF;

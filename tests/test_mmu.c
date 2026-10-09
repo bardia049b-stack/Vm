@@ -13,24 +13,26 @@
 #include "test.h"
 
 #define PT_BASE (RVM_RAM_BASE + 0x300000ULL) /* page tables live here */
-#define PT_L1 (PT_BASE + 0x1000ULL)
-#define PT_L0 (PT_BASE + 0x2000ULL)
+#define PT_L1   (PT_BASE + 0x1000ULL)
+#define PT_L0   (PT_BASE + 0x2000ULL)
 
 #define TEST_VA 0x0000000040000000ULL /* VPN[2]=1, VPN[1]=0, VPN[0]=0 */
 #define TEST_PA (RVM_RAM_BASE + 0x200000ULL)
 
-static inline u64 pte(u64 pa, u32 flags) { return ((pa >> 12) << 10) | flags; }
+static inline u64 pte(u64 pa, u32 flags) {
+    return ((pa >> 12) << 10) | flags;
+}
 
-static void put_pte(th *t, u64 tbl, u32 index, u64 p)
-{
+static void put_pte(th *t, u64 tbl, u32 index, u64 p) {
     th_poke64(t, tbl + 8ULL * index, p);
 }
 
-static u64 vpn(u64 va, u32 level) { return (va >> (12 + 9 * level)) & 0x1FF; }
+static u64 vpn(u64 va, u32 level) {
+    return (va >> (12 + 9 * level)) & 0x1FF;
+}
 
 /* Build a Sv39 (or Sv48) mapping va -> pa with the given leaf permissions. */
-static u64 build_tables(th *t, u64 va, u64 pa, u32 leaf_flags, u64 mode)
-{
+static u64 build_tables(th *t, u64 va, u64 pa, u32 leaf_flags, u64 mode) {
     u32 levels = (mode == SATP_MODE_SV39) ? 3 : 4;
     put_pte(t, PT_BASE, (u32)vpn(va, levels - 1), pte(PT_L1, PTE_V));
     put_pte(t, PT_L1, (u32)vpn(va, levels - 2), pte(PT_L0, PTE_V));
@@ -38,8 +40,7 @@ static u64 build_tables(th *t, u64 va, u64 pa, u32 leaf_flags, u64 mode)
     return (mode << 60) | (PT_BASE >> 12);
 }
 
-void test_mmu_bare(void)
-{
+void test_mmu_bare(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     mmu_xlat r = mmu_translate(&t.mmu, 0xDEADBEEFULL, PRV_S, 0, false, false, ACC_LOAD);
@@ -53,8 +54,7 @@ void test_mmu_bare(void)
     th_free(&t);
 }
 
-void test_mmu_sv39(void)
-{
+void test_mmu_sv39(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     u64 satp = build_tables(&t, TEST_VA, TEST_PA, PTE_R | PTE_W | PTE_X, SATP_MODE_SV39);
@@ -88,8 +88,7 @@ void test_mmu_sv39(void)
     th_free(&t);
 }
 
-void test_mmu_sv48(void)
-{
+void test_mmu_sv48(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     /* VA with a non-zero VPN[3]: 0x0000_1000_0000_0000 */
@@ -112,8 +111,7 @@ void test_mmu_sv48(void)
     th_free(&t);
 }
 
-void test_mmu_permissions(void)
-{
+void test_mmu_permissions(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
 
@@ -168,8 +166,7 @@ void test_mmu_permissions(void)
     th_free(&t);
 }
 
-void test_mmu_tlb(void)
-{
+void test_mmu_tlb(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     u64 satp = build_tables(&t, TEST_VA, TEST_PA, PTE_R | PTE_W | PTE_X, SATP_MODE_SV39);
@@ -203,8 +200,7 @@ void test_mmu_tlb(void)
  * from two 1 GiB superpages.  This proves fetch, load and store all go through
  * the same translation path, including MMIO (the UART lives in superpage 0).
  */
-void test_mmu_identity_exec(void)
-{
+void test_mmu_identity_exec(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     put_pte(&t, PT_BASE, 0, pte(0x00000000ULL, PTE_V | PTE_R | PTE_W | PTE_X));

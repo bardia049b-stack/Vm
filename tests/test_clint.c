@@ -5,8 +5,7 @@
 #include "fixtures/harness.h"
 #include "test.h"
 
-void test_clint_mtimecmp(void)
-{
+void test_clint_mtimecmp(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
 

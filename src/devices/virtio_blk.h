@@ -9,19 +9,19 @@
 
 #define VIRTIO_BLK_SECTOR_SIZE 512
 
-#define VIRTIO_BLK_T_IN 0    /* device -> guest (read)  */
-#define VIRTIO_BLK_T_OUT 1   /* guest -> device (write) */
-#define VIRTIO_BLK_T_FLUSH 4
+#define VIRTIO_BLK_T_IN     0 /* device -> guest (read)  */
+#define VIRTIO_BLK_T_OUT    1 /* guest -> device (write) */
+#define VIRTIO_BLK_T_FLUSH  4
 #define VIRTIO_BLK_T_GET_ID 8
 
-#define VIRTIO_BLK_S_OK 0
-#define VIRTIO_BLK_S_IOERR 1
+#define VIRTIO_BLK_S_OK     0
+#define VIRTIO_BLK_S_IOERR  1
 #define VIRTIO_BLK_S_UNSUPP 2
 
 /* Feature bit numbers from the virtio specification. */
 #define VIRTIO_BLK_F_BLK_SIZE 6
-#define VIRTIO_BLK_F_FLUSH 9
-#define VIRTIO_F_VERSION_1 32
+#define VIRTIO_BLK_F_FLUSH    9
+#define VIRTIO_F_VERSION_1    32
 
 typedef struct virtio_blk {
     virtio_backend be; /* must be first: vm.c casts device <-> backend */

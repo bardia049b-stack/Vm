@@ -28,13 +28,13 @@
 #define UART_SCR 7
 
 /* LSR bits */
-#define LSR_DR 0x01   /* data ready */
-#define LSR_OE 0x02   /* overrun error */
+#define LSR_DR   0x01 /* data ready */
+#define LSR_OE   0x02 /* overrun error */
 #define LSR_THRE 0x20 /* transmit holding register empty */
 #define LSR_TEMT 0x40 /* transmitter empty */
 
 /* IER bits */
-#define IER_RDA 0x01 /* received data available */
+#define IER_RDA  0x01 /* received data available */
 #define IER_THRE 0x02 /* transmitter holding register empty */
 
 typedef struct uart {

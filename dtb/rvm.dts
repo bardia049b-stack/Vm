@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: MIT
+/*
+ * rvm.dts -- the device tree RVM hands to the guest kernel.
+ *
+ * This is the human-editable source for the machine described by
+ * src/loader/fdt.c.  The VM builds an equivalent blob at run time so that a
+ * build without `dtc` still boots; compile this file when you want to change
+ * the machine and pass the result with --dtb:
+ *
+ *     dtc -I dts -O dtb -o rvm.dtb rvm.dts
+ *     ./rvm --dtb dtb/rvm.dtb --kernel vmlinux --disk disk.img
+ *
+ * Keep the two in sync: src/loader/fdt.c is the authority for the addresses,
+ * the interrupt numbers and the phandles used below.
+ */
+
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "rvm,virt";
+	model = "rvm,virt";
+
+	/* Passed to the kernel as-is; tools/run.sh overrides it with -a. */
+	chosen {
+		bootargs = "console=ttyS0 earlycon=sbi root=/dev/vda rw rootwait";
+		stdout-path = "/soc/serial@10000000";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <10000000>;
+
+		cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdc";
+			mmu-type = "riscv,sv57";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+				phandle = <1>;
+			};
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		/* 1 GiB by default; tools/run.sh rewrites this for --ram. */
+		reg = <0x0 0x80000000 0x0 0x40000000>;
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		clint@2000000 {
+			compatible = "riscv,clint0";
+			reg = <0x0 0x2000000 0x0 0x10000>;
+			interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7>;
+		};
+
+		plic@c000000 {
+			compatible = "riscv,plic0";
+			reg = <0x0 0xc000000 0x0 0x4000000>;
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+			interrupt-controller;
+			interrupts-extended = <&cpu0_intc 11 &cpu0_intc 9>;
+			riscv,ndev = <31>;
+			phandle = <2>;
+		};
+
+		serial@10000000 {
+			compatible = "ns16550a";
+			reg = <0x0 0x10000000 0x0 0x100>;
+			clock-frequency = <0x384000>; /* 3.6864 MHz */
+			interrupt-parent = <&plic>;
+			interrupts = <10>;
+		};
+
+		/*
+		 * Eight virtio-mmio slots, one 4 KiB page each, IRQs 1..8.
+		 * Slot 0 is the boot disk; the rest are free for net, gpu,
+		 * input and snd as the VM attaches them.
+		 */
+		virtio_mmio@10001000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10001000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <1>;
+		};
+		virtio_mmio@10002000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10002000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <2>;
+		};
+		virtio_mmio@10003000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10003000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <3>;
+		};
+		virtio_mmio@10004000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10004000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <4>;
+		};
+		virtio_mmio@10005000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10005000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <5>;
+		};
+		virtio_mmio@10006000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10006000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <6>;
+		};
+		virtio_mmio@10007000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10007000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <7>;
+		};
+		virtio_mmio@10008000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10008000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <8>;
+		};
+	};
+};

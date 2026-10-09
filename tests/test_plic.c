@@ -6,12 +6,11 @@
 #include "test.h"
 
 /* Offsets inside the PLIC's MMIO window. */
-#define PLIC_PRIORITY_OFF_VAL(s) (4ULL * (s))
+#define PLIC_PRIORITY_OFF_VAL(s)      (4ULL * (s))
 #define PLIC_ENABLE_OFF_VAL(ctx, src) (0x2000ULL + 0x80ULL * (ctx))
-#define PLIC_CONTEXT_OFF_VAL(ctx) (0x200000ULL + 0x1000ULL * (ctx))
+#define PLIC_CONTEXT_OFF_VAL(ctx)     (0x200000ULL + 0x1000ULL * (ctx))
 
-void test_plic_claim(void)
-{
+void test_plic_claim(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
 

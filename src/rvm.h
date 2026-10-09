@@ -34,7 +34,7 @@ typedef int64_t s64;
 
 #define RVM_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
-#define RVM_ALIGN_UP(v, a) (((v) + ((a)-1)) & ~((__typeof__(v))(a)-1))
+#define RVM_ALIGN_UP(v, a)   (((v) + ((a)-1)) & ~((__typeof__(v))(a)-1))
 #define RVM_ALIGN_DOWN(v, a) ((v) & ~((__typeof__(v))(a)-1))
 #define RVM_IS_ALIGNED(v, a) (((v) & ((__typeof__(v))(a)-1)) == 0)
 
@@ -53,32 +53,32 @@ typedef int64_t s64;
  * The layout mirrors dtb/rvm.dts exactly.  If you change one, change the
  * other -- Linux discovers every device through the device tree.
  */
-#define RVM_RAM_BASE 0x80000000ULL
-#define RVM_RAM_MIN (8ULL << 20)      /* 8 MiB   */
+#define RVM_RAM_BASE    0x80000000ULL
+#define RVM_RAM_MIN     (8ULL << 20)    /* 8 MiB   */
 #define RVM_RAM_DEFAULT (1024ULL << 20) /* 1 GiB */
-#define RVM_RAM_MAX (8ULL << 30)      /* 8 GiB   */
+#define RVM_RAM_MAX     (8ULL << 30)    /* 8 GiB   */
 
 #define RVM_CLINT_BASE 0x02000000ULL
 #define RVM_CLINT_SIZE 0x00010000ULL
-#define RVM_CLINT_IRQ 3 /* M-mode software/timer go straight to the hart */
+#define RVM_CLINT_IRQ  3 /* M-mode software/timer go straight to the hart */
 
-#define RVM_PLIC_BASE 0x0C000000ULL
-#define RVM_PLIC_SIZE 0x04000000ULL
+#define RVM_PLIC_BASE    0x0C000000ULL
+#define RVM_PLIC_SIZE    0x04000000ULL
 #define RVM_PLIC_MAX_SRC 64
 
 #define RVM_UART_BASE 0x10000000ULL
 #define RVM_UART_SIZE 0x00000100ULL
-#define RVM_UART_IRQ 10
+#define RVM_UART_IRQ  10
 
 /* Eight virtio-mmio slots, one 4 KiB page each, IRQs 1..8. */
-#define RVM_VIRTIO_BASE 0x10001000ULL
+#define RVM_VIRTIO_BASE   0x10001000ULL
 #define RVM_VIRTIO_STRIDE 0x00001000ULL
-#define RVM_VIRTIO_SIZE (RVM_VIRTIO_STRIDE * RVM_VIRTIO_COUNT)
-#define RVM_VIRTIO_COUNT 8
+#define RVM_VIRTIO_SIZE   (RVM_VIRTIO_STRIDE * RVM_VIRTIO_COUNT)
+#define RVM_VIRTIO_COUNT  8
 #define RVM_VIRTIO_IRQ(i) (1u + (u32)(i))
 
 /* Where the device tree blob and the initrd get parked by the loader. */
-#define RVM_DTB_DEFAULT_ADDR 0x82200000ULL
+#define RVM_DTB_DEFAULT_ADDR    0x82200000ULL
 #define RVM_INITRD_DEFAULT_ADDR 0x84000000ULL
 
 /* Default kernel entry for a Linux vmlinux/Image built for RISC-V virt. */
@@ -117,8 +117,8 @@ void rvm_vlog(rvm_loglevel lvl, const char *fmt, va_list ap);
 
 #define LOG_TRACE(...) rvm_log(RVM_LOG_TRACE, __VA_ARGS__)
 #define LOG_DEBUG(...) rvm_log(RVM_LOG_DEBUG, __VA_ARGS__)
-#define LOG_INFO(...) rvm_log(RVM_LOG_INFO, __VA_ARGS__)
-#define LOG_WARN(...) rvm_log(RVM_LOG_WARN, __VA_ARGS__)
+#define LOG_INFO(...)  rvm_log(RVM_LOG_INFO, __VA_ARGS__)
+#define LOG_WARN(...)  rvm_log(RVM_LOG_WARN, __VA_ARGS__)
 #define LOG_ERROR(...) rvm_log(RVM_LOG_ERROR, __VA_ARGS__)
 
 /*

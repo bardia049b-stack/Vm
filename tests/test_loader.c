@@ -14,8 +14,7 @@
 
 /* Build a minimal but valid ELF64/LE/RISC-V image with one PT_LOAD segment. */
 static size_t build_elf(u8 *buf, u64 entry, u64 paddr, const u8 *payload, u32 plen,
-                        u32 memsz_extra)
-{
+                        u32 memsz_extra) {
     const u32 EHSZ = 64, PHENTSZ = 56;
     size_t data_off = EHSZ + PHENTSZ;
     memset(buf, 0, data_off + plen);
@@ -28,33 +27,35 @@ static size_t build_elf(u8 *buf, u64 entry, u64 paddr, const u8 *payload, u32 pl
     buf[5] = ELFDATA2LSB;
     buf[6] = 1; /* EV_CURRENT */
 
-#define PUT16(off, v)                                                                            \
-    do {                                                                                         \
-        buf[(off)] = (u8)(v);                                                                    \
-        buf[(off) + 1] = (u8)((v) >> 8);                                                          \
+#define PUT16(off, v)                                                                              \
+    do {                                                                                           \
+        buf[(off)] = (u8)(v);                                                                      \
+        buf[(off) + 1] = (u8)((v) >> 8);                                                           \
     } while (0)
-#define PUT32(off, v)                                                                            \
-    do {                                                                                         \
-        for (u32 _i = 0; _i < 4; _i++) buf[(off) + _i] = (u8)((v) >> (8 * _i));                  \
+#define PUT32(off, v)                                                                              \
+    do {                                                                                           \
+        for (u32 _i = 0; _i < 4; _i++)                                                             \
+            buf[(off) + _i] = (u8)((v) >> (8 * _i));                                               \
     } while (0)
-#define PUT64(off, v)                                                                            \
-    do {                                                                                         \
-        for (u32 _i = 0; _i < 8; _i++) buf[(off) + _i] = (u8)((v) >> (8 * _i));                  \
+#define PUT64(off, v)                                                                              \
+    do {                                                                                           \
+        for (u32 _i = 0; _i < 8; _i++)                                                             \
+            buf[(off) + _i] = (u8)((v) >> (8 * _i));                                               \
     } while (0)
 
-    PUT16(16, 2);         /* e_type = ET_EXEC */
-    PUT16(18, EM_RISCV);  /* e_machine */
-    PUT32(20, 1);         /* e_version */
-    PUT64(24, entry);     /* e_entry */
-    PUT64(32, EHSZ);      /* e_phoff */
-    PUT64(40, 0);         /* e_shoff */
-    PUT32(48, 0);         /* e_flags */
-    PUT16(52, EHSZ);      /* e_ehsize */
-    PUT16(54, PHENTSZ);   /* e_phentsize */
-    PUT16(56, 1);         /* e_phnum */
-    PUT16(58, 64);        /* e_shentsize */
-    PUT16(60, 0);         /* e_shnum */
-    PUT16(62, 0);         /* e_shstrndx */
+    PUT16(16, 2);        /* e_type = ET_EXEC */
+    PUT16(18, EM_RISCV); /* e_machine */
+    PUT32(20, 1);        /* e_version */
+    PUT64(24, entry);    /* e_entry */
+    PUT64(32, EHSZ);     /* e_phoff */
+    PUT64(40, 0);        /* e_shoff */
+    PUT32(48, 0);        /* e_flags */
+    PUT16(52, EHSZ);     /* e_ehsize */
+    PUT16(54, PHENTSZ);  /* e_phentsize */
+    PUT16(56, 1);        /* e_phnum */
+    PUT16(58, 64);       /* e_shentsize */
+    PUT16(60, 0);        /* e_shnum */
+    PUT16(62, 0);        /* e_shstrndx */
 
     PUT32(EHSZ + 0, PT_LOAD); /* p_type */
     PUT32(EHSZ + 4, 7);       /* p_flags = RWX */
@@ -72,8 +73,7 @@ static size_t build_elf(u8 *buf, u64 entry, u64 paddr, const u8 *payload, u32 pl
     return data_off + plen;
 }
 
-void test_loader_elf(void)
-{
+void test_loader_elf(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
 
@@ -81,7 +81,8 @@ void test_loader_elf(void)
     const u64 paddr = RVM_RAM_BASE + 0x200000ULL;
     const u64 entry = paddr + 0x100;
     u8 payload[64];
-    for (u32 i = 0; i < sizeof(payload); i++) payload[i] = (u8)(0xA0 + i);
+    for (u32 i = 0; i < sizeof(payload); i++)
+        payload[i] = (u8)(0xA0 + i);
     /* memsz larger than filesz: the tail must be zero filled. */
     size_t n = build_elf(img, entry, paddr, payload, sizeof(payload), 64);
 
@@ -137,13 +138,13 @@ void test_loader_elf(void)
     th_free(&t);
 }
 
-void test_loader_blob(void)
-{
+void test_loader_blob(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     const char *path = "/tmp/rvm-test-blob.bin";
     u8 data[256];
-    for (u32 i = 0; i < sizeof(data); i++) data[i] = (u8)(i ^ 0x5A);
+    for (u32 i = 0; i < sizeof(data); i++)
+        data[i] = (u8)(i ^ 0x5A);
     FILE *fp = fopen(path, "wb");
     CHECK(fp != NULL);
     if (fp) {
@@ -171,7 +172,9 @@ void test_loader_blob(void)
 /* ----------------------------------------------------------------- FDT */
 
 /* Minimal big-endian readers for walking the produced blob. */
-static u32 be32(const u8 *p) { return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3]; }
+static u32 be32(const u8 *p) {
+    return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
+}
 
 typedef struct fdt_prop_found {
     bool found;
@@ -183,8 +186,7 @@ typedef struct fdt_prop_found {
  * Walk the struct block looking for `prop` inside node `node`.  `node` may be
  * "" for the root.  Only the first match is reported.
  */
-static fdt_prop_found fdt_find(const u8 *blob, const char *node, const char *prop)
-{
+static fdt_prop_found fdt_find(const u8 *blob, const char *node, const char *prop) {
     fdt_prop_found r = {false, 0, NULL};
     u32 off_struct = be32(blob + 8);
     u32 off_strings = be32(blob + 12);
@@ -202,7 +204,8 @@ static fdt_prop_found fdt_find(const u8 *blob, const char *node, const char *pro
         case 1: { /* FDT_BEGIN_NODE */
             const char *name = (const char *)s;
             s += strlen(name) + 1;
-            while (((uintptr_t)s & 3) != 0) s++;
+            while (((uintptr_t)s & 3) != 0)
+                s++;
             depth++;
             if (depth == 1)
                 snprintf(path, sizeof(path), "%s", name);
@@ -225,7 +228,8 @@ static fdt_prop_found fdt_find(const u8 *blob, const char *node, const char *pro
             u32 nameoff = be32(s + 4);
             const u8 *data = s + 8;
             s += 8 + len;
-            while (((uintptr_t)s & 3) != 0) s++;
+            while (((uintptr_t)s & 3) != 0)
+                s++;
             const char *pname = (const char *)(blob + off_strings + nameoff);
             if (strcmp(pname, prop) == 0 && strcmp(path, node) == 0) {
                 r.found = true;
@@ -235,9 +239,12 @@ static fdt_prop_found fdt_find(const u8 *blob, const char *node, const char *pro
             }
             break;
         }
-        case 4: break; /* FDT_NOP */
-        case 9: return r;
-        default: return r;
+        case 4:
+            break; /* FDT_NOP */
+        case 9:
+            return r;
+        default:
+            return r;
         }
     }
     return r;
@@ -245,8 +252,7 @@ static fdt_prop_found fdt_find(const u8 *blob, const char *node, const char *pro
 
 /* Walks the struct block tracking the current path, so any node can be
  * checked for existence regardless of which properties it happens to carry. */
-static bool fdt_has_node(const u8 *blob, const char *path)
-{
+static bool fdt_has_node(const u8 *blob, const char *path) {
     const u8 *p = blob + be32(blob + 8);
     const u8 *end = blob + be32(blob + 12); /* the string block follows */
     char cur[256];
@@ -268,7 +274,8 @@ static bool fdt_has_node(const u8 *blob, const char *path)
                 clen += nlen;
                 cur[clen] = 0;
             }
-            if (strcmp(cur, path) == 0) return true;
+            if (strcmp(cur, path) == 0)
+                return true;
             break;
         }
         case 2: /* FDT_END_NODE -- pop back to the parent */
@@ -292,8 +299,7 @@ static bool fdt_has_node(const u8 *blob, const char *path)
     return false;
 }
 
-void test_fdt_blob(void)
-{
+void test_fdt_blob(void) {
     dtb_opts o;
     memset(&o, 0, sizeof(o));
     o.ram_base = RVM_RAM_BASE;

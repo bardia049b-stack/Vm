@@ -19,8 +19,7 @@
 
 /* ------------------------------------------------------------ RV64I ALU */
 
-void test_cpu_alu(void)
-{
+void test_cpu_alu(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     th_emit(&t, ADD(X_A0, X_T0, X_T1));
@@ -28,9 +27,9 @@ void test_cpu_alu(void)
     th_emit(&t, AND(X_A2, X_T2, X_T0));
     th_emit(&t, OR(X_A3, X_T2, X_T0));
     th_emit(&t, XOR(X_A4, X_T2, X_T0));
-    th_emit(&t, SLT(X_A5, X_S0, X_S1));  /* signed   */
-    th_emit(&t, SLTU(X_A7, X_S0, X_S1)); /* unsigned */
-    th_emit(&t, SLTU(X_T2, X_S1, X_S0)); /* unsigned, reversed operands */
+    th_emit(&t, SLT(X_A5, X_S0, X_S1));   /* signed   */
+    th_emit(&t, SLTU(X_A7, X_S0, X_S1));  /* unsigned */
+    th_emit(&t, SLTU(X_T2, X_S1, X_S0));  /* unsigned, reversed operands */
     th_emit(&t, ADD(X_ZERO, X_S0, X_S1)); /* writes to x0 are discarded */
     t.cpu.x[X_T0] = 5;
     t.cpu.x[X_T1] = 7;
@@ -51,8 +50,7 @@ void test_cpu_alu(void)
     th_free(&t);
 }
 
-void test_cpu_imm(void)
-{
+void test_cpu_imm(void) {
     /* Bitwise and additive immediates. */
     {
         th t;
@@ -115,8 +113,7 @@ void test_cpu_imm(void)
     }
 }
 
-void test_cpu_shifts(void)
-{
+void test_cpu_shifts(void) {
     /* Shift by 63: logical vs arithmetic on a negative value. */
     {
         th t;
@@ -158,8 +155,7 @@ void test_cpu_shifts(void)
 
 /* ------------------------------------------------------- loads / stores */
 
-void test_cpu_loads_stores(void)
-{
+void test_cpu_loads_stores(void) {
     const u64 buf = TH_DATA_ADDR;
 
     /* Every load width, with sign and zero extension, on a known pattern. */
@@ -231,19 +227,18 @@ void test_cpu_loads_stores(void)
 
 /* -------------------------------------------------------------- branches */
 
-void test_cpu_branches(void)
-{
+void test_cpu_branches(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     /* Each taken branch jumps over a "poison" instruction that would write a
      * sentinel; a not-taken branch executes it instead. */
-    th_emit(&t, BEQ(X_T0, X_T1, 8));  /* taken: equal */
+    th_emit(&t, BEQ(X_T0, X_T1, 8)); /* taken: equal */
     th_emit(&t, ADDI(X_A0, X_ZERO, 111));
-    th_emit(&t, BNE(X_T0, X_T1, 8));  /* NOT taken */
+    th_emit(&t, BNE(X_T0, X_T1, 8)); /* NOT taken */
     th_emit(&t, ADDI(X_A0, X_ZERO, 222));
-    th_emit(&t, BLT(X_T2, X_T0, 8));  /* taken: -1 < 10 signed */
+    th_emit(&t, BLT(X_T2, X_T0, 8)); /* taken: -1 < 10 signed */
     th_emit(&t, ADDI(X_A1, X_ZERO, 111));
-    th_emit(&t, BGE(X_T0, X_T2, 8));  /* taken: 10 >= -1 signed */
+    th_emit(&t, BGE(X_T0, X_T2, 8)); /* taken: 10 >= -1 signed */
     th_emit(&t, ADDI(X_A1, X_ZERO, 222));
     th_emit(&t, BLTU(X_T0, X_T2, 8)); /* taken: 10 < 0xff.. unsigned */
     th_emit(&t, ADDI(X_A2, X_ZERO, 111));
@@ -269,8 +264,7 @@ void test_cpu_branches(void)
     th_free(&t);
 }
 
-void test_cpu_jumps(void)
-{
+void test_cpu_jumps(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     const u64 target = TH_CODE_ADDR + 400;
@@ -282,7 +276,8 @@ void test_cpu_jumps(void)
     th_emit(&t, ADDI(X_A2, X_ZERO, 7));
     th_emit(&t, JALR(X_T1, X_T0, 4)); /* pc = (target-4) + 4 */
     th_emit(&t, ADDI(X_A3, X_ZERO, 111));
-    while (t.code < target) th_emit(&t, NOP());
+    while (t.code < target)
+        th_emit(&t, NOP());
     CHECK_U64(t.code, target);
     th_emit(&t, ADDI(X_A4, X_ZERO, 9));
 
@@ -302,8 +297,7 @@ void test_cpu_jumps(void)
     th_free(&t);
 }
 
-void test_cpu_upper(void)
-{
+void test_cpu_upper(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
     u64 pc0 = t.cpu.pc;
@@ -321,8 +315,7 @@ void test_cpu_upper(void)
     th_free(&t);
 }
 
-void test_cpu_word_ops(void)
-{
+void test_cpu_word_ops(void) {
     /* Positive word that overflows into bit 31: the result must sign-extend. */
     {
         th t;
@@ -369,8 +362,7 @@ void test_cpu_word_ops(void)
 
 /* ----------------------------------------------------------- M extension */
 
-void test_cpu_mul_div(void)
-{
+void test_cpu_mul_div(void) {
     /* mul / mulh / mulhsu / mulhu */
     {
         th t;
@@ -477,8 +469,7 @@ void test_cpu_mul_div(void)
 
 /* ----------------------------------------------------------- A extension */
 
-void test_cpu_amo(void)
-{
+void test_cpu_amo(void) {
     const u64 w32 = TH_DATA_ADDR;
     const u64 w64 = TH_DATA_ADDR + 0x40;
 
@@ -578,9 +569,9 @@ void test_cpu_amo(void)
         CHECK_S64(t.cpu.x[X_A5], oldv);
         CHECK_U64(th_peek32(&t, base + 40), 0xFFFFFFF6u); /* min(-10, 3) = -10   */
         CHECK_S64(t.cpu.x[X_T2], oldv);
-        CHECK_U64(th_peek32(&t, base + 48), 3u);          /* max(-10, 3) = 3     */
+        CHECK_U64(th_peek32(&t, base + 48), 3u); /* max(-10, 3) = 3     */
         CHECK_S64(t.cpu.x[X_S0], oldv);
-        CHECK_U64(th_peek32(&t, base + 56), 3u);          /* minu: 3 < 0xFFFFFFF6 */
+        CHECK_U64(th_peek32(&t, base + 56), 3u); /* minu: 3 < 0xFFFFFFF6 */
         CHECK_S64(t.cpu.x[X_S1], oldv);
         CHECK_U64(th_peek32(&t, base + 64), 0xFFFFFFF6u); /* maxu                */
         th_free(&t);
@@ -607,85 +598,77 @@ void test_cpu_amo(void)
 /* -------------------------------------------------------- C extension */
 
 /* 16-bit encoders: q = bits[1:0], funct3 = bits[15:13]. */
-static inline u16 c_addi(u32 rd, s32 imm)
-{
+static inline u16 c_addi(u32 rd, s32 imm) {
     u32 u = (u32)imm & 0x3F;
     return (u16)((((u >> 5) & 1) << 12) | (rd << 7) | ((u & 0x1F) << 2) | 1);
 }
-static inline u16 c_li(u32 rd, s32 imm)
-{
+static inline u16 c_li(u32 rd, s32 imm) {
     u32 u = (u32)imm & 0x3F;
     return (u16)((2 << 13) | (((u >> 5) & 1) << 12) | (rd << 7) | ((u & 0x1F) << 2) | 1);
 }
 /* v6 is the 6-bit signed value; the instruction materialises v6 << 12. */
-static inline u16 c_lui(u32 rd, s32 v6)
-{
+static inline u16 c_lui(u32 rd, s32 v6) {
     u32 u = (u32)v6 & 0x3F;
     return (u16)((3 << 13) | (((u >> 5) & 1) << 12) | (rd << 7) | ((u & 0x1F) << 2) | 1);
 }
-static inline u16 c_mv(u32 rd, u32 rs2) { return (u16)((4 << 13) | (rd << 7) | (rs2 << 2) | 2); }
-static inline u16 c_add(u32 rd, u32 rs2)
-{
+static inline u16 c_mv(u32 rd, u32 rs2) {
+    return (u16)((4 << 13) | (rd << 7) | (rs2 << 2) | 2);
+}
+static inline u16 c_add(u32 rd, u32 rs2) {
     return (u16)((4 << 13) | (1 << 12) | (rd << 7) | (rs2 << 2) | 2);
 }
 /* rd3/rs1_3 are compressed register indices: the real register is 8 + rd3. */
-static inline u16 c_ld(u32 rd3, u32 rs1_3, s32 off)
-{
+static inline u16 c_ld(u32 rd3, u32 rs1_3, s32 off) {
     u32 u = (u32)off;
     return (u16)((3 << 13) | (((u >> 3) & 7) << 10) | (rs1_3 << 7) | (((u >> 6) & 3) << 5) |
                  (rd3 << 2));
 }
-static inline u16 c_sd(u32 rs2_3, u32 rs1_3, s32 off)
-{
+static inline u16 c_sd(u32 rs2_3, u32 rs1_3, s32 off) {
     u32 u = (u32)off;
     return (u16)((7 << 13) | (((u >> 3) & 7) << 10) | (rs1_3 << 7) | (((u >> 6) & 3) << 5) |
                  (rs2_3 << 2));
 }
-static inline u16 c_slli(u32 rd, u32 sh) { return (u16)(((rd << 7) | (sh << 2)) | 2); }
-static inline u16 c_andi(u32 rd3, s32 imm)
-{
+static inline u16 c_slli(u32 rd, u32 sh) {
+    return (u16)(((rd << 7) | (sh << 2)) | 2);
+}
+static inline u16 c_andi(u32 rd3, s32 imm) {
     u32 u = (u32)imm & 0x3F;
     return (u16)((4 << 13) | (2 << 10) | (((u >> 5) & 1) << 12) | (rd3 << 7) | ((u & 0x1F) << 2) |
                  1);
 }
-static inline u16 c_sub(u32 rd3, u32 rs2_3)
-{
+static inline u16 c_sub(u32 rd3, u32 rs2_3) {
     return (u16)((4 << 13) | (3 << 10) | (rd3 << 7) | (rs2_3 << 2) | 1);
 }
-static inline u16 c_j(s32 off)
-{
+static inline u16 c_j(s32 off) {
     u32 u = (u32)off;
     return (u16)((5 << 13) | (((u >> 11) & 1) << 12) | (((u >> 4) & 1) << 11) |
                  (((u >> 8) & 3) << 9) | (((u >> 10) & 1) << 8) | (((u >> 6) & 1) << 7) |
                  (((u >> 7) & 1) << 6) | (((u >> 1) & 7) << 3) | (((u >> 5) & 1) << 2) | 1);
 }
-static inline u16 c_beqz(u32 rs1_3, s32 off)
-{
+static inline u16 c_beqz(u32 rs1_3, s32 off) {
     u32 u = (u32)off;
     return (u16)((6 << 13) | (((u >> 8) & 1) << 12) | (((u >> 3) & 3) << 10) | (rs1_3 << 7) |
                  (((u >> 6) & 3) << 5) | (((u >> 1) & 3) << 3) | (((u >> 5) & 1) << 2) | 1);
 }
-static inline u16 c_addi4spn(u32 rd3, u32 nzuimm)
-{
+static inline u16 c_addi4spn(u32 rd3, u32 nzuimm) {
     return (u16)(((((nzuimm >> 4) & 3) << 11) | (((nzuimm >> 6) & 0xF) << 7) |
                   (((nzuimm >> 2) & 3) << 5) | (rd3 << 2)));
 }
 
-void test_cpu_compressed(void)
-{
+void test_cpu_compressed(void) {
     /* Arithmetic and move forms. */
     {
         th t;
         CHECK(th_init(&t) == RVM_OK);
-        th_emit16(&t, c_addi(X_T0, 5));      /* t0 = x0 + 5      */
-        th_emit16(&t, c_addi(X_T0, 7));      /* t0 = 12          */
-        th_emit16(&t, c_li(X_T1, -3));       /* t1 = -3          */
-        th_emit16(&t, c_lui(X_T2, 0x15));    /* t2 = sext(0x15 << 12)   */
-        th_emit16(&t, c_mv(X_A0, X_T0));     /* a0 = 12          */
-        th_emit16(&t, c_add(X_A0, X_T1));    /* a0 = 9           */
-        th_emit16(&t, c_slli(X_T0, 4));      /* t0 = 192         */
-        th_emit16(&t, c_li(X_S1, 0x1F));     /* s1 = 0x1F        */
-        th_emit16(&t, c_andi(X_S1 - 8, -1)); /* s1 &= -1         */
+        th_emit16(&t, c_addi(X_T0, 5));           /* t0 = x0 + 5      */
+        th_emit16(&t, c_addi(X_T0, 7));           /* t0 = 12          */
+        th_emit16(&t, c_li(X_T1, -3));            /* t1 = -3          */
+        th_emit16(&t, c_lui(X_T2, 0x15));         /* t2 = sext(0x15 << 12)   */
+        th_emit16(&t, c_mv(X_A0, X_T0));          /* a0 = 12          */
+        th_emit16(&t, c_add(X_A0, X_T1));         /* a0 = 9           */
+        th_emit16(&t, c_slli(X_T0, 4));           /* t0 = 192         */
+        th_emit16(&t, c_li(X_S1, 0x1F));          /* s1 = 0x1F        */
+        th_emit16(&t, c_andi(X_S1 - 8, -1));      /* s1 &= -1         */
         th_emit16(&t, c_sub(X_S1 - 8, X_S1 - 8)); /* s1 -= s1    */
         th_run_all(&t);
         CHECK_U64(t.cpu.x[X_T0], 192);
@@ -732,14 +715,14 @@ void test_cpu_compressed(void)
     {
         th t;
         CHECK(th_init(&t) == RVM_OK);
-        th_emit16(&t, 0x0001); /* c.nop */
+        th_emit16(&t, 0x0001);                   /* c.nop */
         th_emit16(&t, c_addi4spn(X_A0 - 8, 64)); /* nzuimm[9:6] only        */
         th_emit16(&t, c_addi4spn(X_A1 - 8, 80)); /* also sets nzuimm[5:4]     */
         th_emit16(&t, c_addi4spn(X_A2 - 8, 12)); /* nzuimm[3:2] only          */
         t.cpu.x[X_SP] = 0x1000;
         th_run_all(&t);
         CHECK_U64(t.cpu.pc, TH_CODE_ADDR + 8); /* c.nop + three c.addi4spn */
-        CHECK_U64(t.cpu.x[X_SP], 0x1000); /* sp is untouched */
+        CHECK_U64(t.cpu.x[X_SP], 0x1000);      /* sp is untouched */
         CHECK_U64(t.cpu.x[X_A0], 0x1000 + 64);
         CHECK_U64(t.cpu.x[X_A1], 0x1000 + 80);
         CHECK_U64(t.cpu.x[X_A2], 0x1000 + 12);
@@ -753,7 +736,8 @@ void test_cpu_compressed(void)
         u64 cmv = th_emit16(&t, (u16)(0x8002 | (X_A0 << 7) | (X_T0 << 2))); /* c.mv a0, t0 */
         CHECK_U64(cmv, TH_CODE_ADDR);
         u64 cj = th_emit16(&t, (u16)((4 << 13) | (1 << 12) | (X_T1 << 7) | 2)); /* c.jalr t1 */
-        while (t.code < cj + 64) th_emit(&t, NOP());
+        while (t.code < cj + 64)
+            th_emit(&t, NOP());
         u64 land = th_emit16(&t, c_addi(X_A1, 7));
 
         t.cpu.x[X_T0] = 0x4242;
@@ -789,8 +773,7 @@ void test_cpu_compressed(void)
 
 /* ----------------------------------------------------------------- CSR */
 
-void test_cpu_csr(void)
-{
+void test_cpu_csr(void) {
     /* Read-modify-write forms on a plain read-write CSR. */
     {
         th t;
@@ -885,8 +868,7 @@ void test_cpu_csr(void)
 
 /* -------------------------------------------------------- traps & mret */
 
-void test_cpu_trap_mret(void)
-{
+void test_cpu_trap_mret(void) {
     /* ebreak in M-mode: mtvec / mepc / mcause / mtval. */
     {
         th t;
@@ -894,7 +876,8 @@ void test_cpu_trap_mret(void)
         const u64 vec = TH_CODE_ADDR + 0x400;
         t.cpu.csr[CSR_MTVEC] = vec;
         u64 brk = th_emit(&t, EBREAK());
-        while (t.code < vec) th_emit(&t, NOP());
+        while (t.code < vec)
+            th_emit(&t, NOP());
         th_emit(&t, ADDI(X_A0, X_ZERO, 1)); /* proves we really jumped there */
         th_run_all(&t);
 
@@ -930,7 +913,8 @@ void test_cpu_trap_mret(void)
         t.cpu.csr[CSR_MEDELEG] = (1ULL << EXC_ECALL_U);
         t.cpu.priv = PRV_U;
         u64 ec = th_emit(&t, ECALL());
-        while (t.code < svec) th_emit(&t, NOP());
+        while (t.code < svec)
+            th_emit(&t, NOP());
         th_emit(&t, ADDI(X_A0, X_ZERO, 42));
         th_run_all(&t);
 
@@ -990,8 +974,7 @@ void test_cpu_trap_mret(void)
     }
 }
 
-void test_cpu_illegal(void)
-{
+void test_cpu_illegal(void) {
     /* funct7 = 0b0000010 on OP is reserved (0x00 and 0x20 are the only legal
      * values outside the M extension). */
     {
@@ -1036,34 +1019,31 @@ void test_cpu_illegal(void)
 
 /* ------------------------------------------------------------- F / D */
 
-static u64 d2b(double d)
-{
+static u64 d2b(double d) {
     u64 b;
     memcpy(&b, &d, 8);
     return b;
 }
-static double b2d(u64 b)
-{
+static double b2d(u64 b) {
     double d;
     memcpy(&d, &b, 8);
     return d;
 }
-static u32 f2b(float f)
-{
+static u32 f2b(float f) {
     u32 b;
     memcpy(&b, &f, 4);
     return b;
 }
-static float b2f(u32 b)
-{
+static float b2f(u32 b) {
     float f;
     memcpy(&f, &b, 4);
     return f;
 }
-static u64 box32c(u32 bits) { return 0xFFFFFFFF00000000ULL | bits; }
+static u64 box32c(u32 bits) {
+    return 0xFFFFFFFF00000000ULL | bits;
+}
 
-void test_cpu_fp(void)
-{
+void test_cpu_fp(void) {
     /* Memory round trips and NaN boxing of flw. */
     {
         th t;
@@ -1098,7 +1078,7 @@ void test_cpu_fp(void)
         th_emit(&t, FDIV_D(5, 1, 0, 0));
         th_emit(&t, FSQRT_D(7, 6, 0));
         th_emit(&t, FMIN_D(9, 0, 1, 0));
-        th_emit(&t, FSGNJ_D(10, 0, 1, 1)); /* fsgnjn: negate f0's sign */
+        th_emit(&t, FSGNJ_D(10, 0, 1, 1));    /* fsgnjn: negate f0's sign */
         th_emit(&t, FMADD_D(11, 0, 1, 6, 0)); /* 3*4 + 81 */
         th_run_all(&t);
         CHECK(b2d(t.cpu.f[2]) == 7.0);
@@ -1135,7 +1115,7 @@ void test_cpu_fp(void)
         CHECK(th_init(&t) == RVM_OK);
         t.cpu.x[X_T0] = 7;
         t.cpu.f[1] = d2b(-3.7);
-        t.cpu.f[2] = d2b(1e30); /* far outside int32 */
+        t.cpu.f[2] = d2b(1e30);            /* far outside int32 */
         th_emit(&t, FCVT_D_W(0, X_T0, 0)); /* 7 -> 7.0 */
         th_emit(&t, FCVT_W_D(X_A0, 1, 0)); /* RNE -> -4 */
         th_emit(&t, FCVT_W_D(X_A1, 1, 1)); /* RTZ -> -3 */
@@ -1146,7 +1126,7 @@ void test_cpu_fp(void)
         CHECK_S64(t.cpu.x[X_A0], (u64)(s64)(s32)-4);
         CHECK_S64(t.cpu.x[X_A1], (u64)(s64)(s32)-3);
         CHECK_S64(t.cpu.x[X_A2], (u64)(s64)INT32_MAX);
-        CHECK_U64(t.cpu.x[X_A3] & 0x1F, 0x11); /* NX from -3.7, NV from 1e30 */
+        CHECK_U64(t.cpu.x[X_A3] & 0x1F, 0x11);  /* NX from -3.7, NV from 1e30 */
         CHECK_U64((t.cpu.x[X_A3] >> 5) & 7, 0); /* an explicit rm never writes frm */
         th_free(&t);
     }
@@ -1155,8 +1135,8 @@ void test_cpu_fp(void)
         th t;
         CHECK(th_init(&t) == RVM_OK);
         t.cpu.f[3] = box32c(f2b(0.0f));
-        t.cpu.f[4] = box32c(0x7F800000u); /* +inf  */
-        t.cpu.f[5] = box32c(0x7FC00000u); /* qNaN  */
+        t.cpu.f[4] = box32c(0x7F800000u);  /* +inf  */
+        t.cpu.f[5] = box32c(0x7FC00000u);  /* qNaN  */
         t.cpu.f[10] = box32c(0xFF800000u); /* -inf */
         t.cpu.f[11] = box32c(0x00000001u); /* +subnormal */
         t.cpu.f[6] = box32c(f2b(1.0f));
@@ -1211,7 +1191,8 @@ void test_cpu_fp(void)
     {
         th t;
         CHECK(th_init(&t) == RVM_OK);
-        t.cpu.csr[CSR_MSTATUS] = (t.cpu.csr[CSR_MSTATUS] & ~MSTATUS_FS) | (1ULL << MSTATUS_FS_SHIFT);
+        t.cpu.csr[CSR_MSTATUS] =
+            (t.cpu.csr[CSR_MSTATUS] & ~MSTATUS_FS) | (1ULL << MSTATUS_FS_SHIFT);
         t.cpu.f[0] = d2b(1.0);
         t.cpu.f[1] = d2b(2.0);
         th_emit(&t, FADD_D(2, 0, 1, 0));

@@ -1,14 +1,12 @@
 /* SPDX-License-Identifier: MIT */
 #include "sbi.h"
 
-static void ret(cpu *c, s64 error, u64 value)
-{
+static void ret(cpu *c, s64 error, u64 value) {
     c->x[10] = (u64)error;
     c->x[11] = value;
 }
 
-bool sbi_handle(sbi *s, cpu *c)
-{
+bool sbi_handle(sbi *s, cpu *c) {
     u64 eid = c->x[17]; /* a7 */
     u64 fid = c->x[16]; /* a6 */
     u64 a0 = c->x[10], a1 = c->x[11], a2 = c->x[12];
@@ -17,7 +15,8 @@ bool sbi_handle(sbi *s, cpu *c)
     /* ------------------------------------------------ legacy v0.1 console */
     if (eid == SBI_LEGACY_CONSOLE_PUTCHAR) {
         u8 ch = (u8)a0;
-        if (s->write) s->write(s->write_ud, &ch, 1);
+        if (s->write)
+            s->write(s->write_ud, &ch, 1);
         c->x[10] = 0;
         return true;
     }
@@ -25,25 +24,41 @@ bool sbi_handle(sbi *s, cpu *c)
     switch (eid) {
     case SBI_EXT_BASE:
         switch (fid) {
-        case 0: ret(c, SBI_SUCCESS, 0x200ULL); break; /* SBI spec v2.0 */
-        case 1: ret(c, SBI_SUCCESS, 1); break;        /* impl id: RVM */
-        case 2: ret(c, SBI_SUCCESS, 1); break;        /* impl version */
-        case 3: {                                     /* probe_extension */
+        case 0:
+            ret(c, SBI_SUCCESS, 0x200ULL);
+            break; /* SBI spec v2.0 */
+        case 1:
+            ret(c, SBI_SUCCESS, 1);
+            break; /* impl id: RVM */
+        case 2:
+            ret(c, SBI_SUCCESS, 1);
+            break; /* impl version */
+        case 3: {  /* probe_extension */
             bool have = a0 == SBI_EXT_BASE || a0 == SBI_EXT_TIME || a0 == SBI_EXT_IPI ||
                         a0 == SBI_EXT_RFNC || a0 == SBI_EXT_SRST || a0 == SBI_EXT_DBCN;
             ret(c, SBI_SUCCESS, have ? 1 : 0);
             break;
         }
-        case 4: ret(c, SBI_SUCCESS, 0); break; /* mvendorid */
-        case 5: ret(c, SBI_SUCCESS, 0x72766dULL); break; /* marchid ("rvm") */
-        case 6: ret(c, SBI_SUCCESS, 1); break;           /* mimpid */
-        default: ret(c, SBI_ERR_NOT_SUPPORTED, 0); s->n_unsupported++; break;
+        case 4:
+            ret(c, SBI_SUCCESS, 0);
+            break; /* mvendorid */
+        case 5:
+            ret(c, SBI_SUCCESS, 0x72766dULL);
+            break; /* marchid ("rvm") */
+        case 6:
+            ret(c, SBI_SUCCESS, 1);
+            break; /* mimpid */
+        default:
+            ret(c, SBI_ERR_NOT_SUPPORTED, 0);
+            s->n_unsupported++;
+            break;
         }
         return true;
 
     case SBI_EXT_TIME:
         if (fid == 0) { /* sbi_set_timer: RV64 passes the whole value in a0 */
-            if (s->set_timer) s->set_timer(s->set_timer_ud, a0);
+            if (s->set_timer)
+                s->set_timer(s->set_timer_ud, a0);
             /* Per spec: clear STIP and let the CLINT raise MTIP instead. */
             c->csr[CSR_MIP] &= ~MIP_STIP;
             ret(c, SBI_SUCCESS, 0);
@@ -86,8 +101,10 @@ bool sbi_handle(sbi *s, cpu *c)
             u8 chunk[256];
             while (done < len) {
                 u32 n = (u32)RVM_MIN((u64)sizeof(chunk), len - done);
-                if (!bus_read_bytes(s->bus, addr + done, chunk, n)) break;
-                if (s->write) s->write(s->write_ud, chunk, n);
+                if (!bus_read_bytes(s->bus, addr + done, chunk, n))
+                    break;
+                if (s->write)
+                    s->write(s->write_ud, chunk, n);
                 done += n;
             }
             ret(c, SBI_SUCCESS, done);
@@ -95,7 +112,8 @@ bool sbi_handle(sbi *s, cpu *c)
         }
         case 2: { /* console_write_byte */
             u8 ch = (u8)a0;
-            if (s->write) s->write(s->write_ud, &ch, 1);
+            if (s->write)
+                s->write(s->write_ud, &ch, 1);
             ret(c, SBI_SUCCESS, 1);
             break;
         }
@@ -110,7 +128,8 @@ bool sbi_handle(sbi *s, cpu *c)
         if (fid == 0) { /* system_reset(a0=type, a1=reason) */
             LOG_INFO("SBI SRST: type=%llu reason=%llu", (unsigned long long)a0,
                      (unsigned long long)a1);
-            if (s->shutdown) return s->shutdown(s->shutdown_ud, (u32)a0, (u32)a1);
+            if (s->shutdown)
+                return s->shutdown(s->shutdown_ud, (u32)a0, (u32)a1);
             ret(c, SBI_SUCCESS, 0);
         } else {
             ret(c, SBI_ERR_NOT_SUPPORTED, 0);
@@ -119,8 +138,8 @@ bool sbi_handle(sbi *s, cpu *c)
         return true;
 
     default:
-        LOG_WARN("SBI: unsupported extension 0x%llx fid %llu (a0=0x%llx)",
-                 (unsigned long long)eid, (unsigned long long)fid, (unsigned long long)a0);
+        LOG_WARN("SBI: unsupported extension 0x%llx fid %llu (a0=0x%llx)", (unsigned long long)eid,
+                 (unsigned long long)fid, (unsigned long long)a0);
         RVM_UNUSED(a2);
         ret(c, SBI_ERR_NOT_SUPPORTED, 0);
         s->n_unsupported++;
@@ -128,9 +147,9 @@ bool sbi_handle(sbi *s, cpu *c)
     }
 }
 
-void sbi_init(sbi *s, bus *b)
-{
-    if (!s) return;
+void sbi_init(sbi *s, bus *b) {
+    if (!s)
+        return;
     memset(s, 0, sizeof(*s));
     s->bus = b;
 }

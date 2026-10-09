@@ -10,11 +10,28 @@ CSTD     ?= -std=c11
 
 WARNINGS := -Wall -Wextra -Wshadow -Wundef -Wpointer-arith -Wcast-qual \
             -Wstrict-prototypes -Wmissing-prototypes -Wno-unused-parameter
+# WERROR=1 turns the whole build into a lint pass; `make lint` always does.
+ifeq ($(WERROR),1)
+WARNINGS += -Werror
+endif
+# Build mode.  MODE=debug is what you want under gdb or with --trace; MODE=
+# release is what CI ships.  An explicit OPT= on the command line still wins.
+MODE     ?= release
+ifeq ($(MODE),debug)
+OPT      ?= -O0 -g3 -DRVM_DEBUG
+else ifeq ($(MODE),sanity)
+OPT      ?= -O1 -g -fsanitize=address,undefined
+else
 OPT      ?= -O2 -g
+endif
 # _POSIX_C_SOURCE unlocks pread/pwrite/ftruncate/nanosleep under strict -std=c11.
 DEFS     ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 CFLAGS   ?= $(CSTD) $(DEFS) $(OPT) $(WARNINGS) -Isrc -fno-omit-frame-pointer
 LDFLAGS  ?=
+# MODE=sanity needs the sanitizer runtime at link time too.
+ifeq ($(MODE),sanity)
+LDFLAGS  += -fsanitize=address,undefined
+endif
 LDLIBS   ?= -lm
 
 BUILD    := build
@@ -39,7 +56,7 @@ all: $(BIN)
 $(BIN): $(OBJ)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-	@echo "built $@ ($(shell du -h $@ 2>/dev/null | cut -f1))"
+	@echo "built $@ ($$(du -h $@ 2>/dev/null | cut -f1))"
 
 # Static library of the core, reused by the test binary and the Android JNI.
 $(BUILD)/librvm.a: $(LIB_OBJ)
@@ -48,8 +65,11 @@ $(BUILD)/librvm.a: $(LIB_OBJ)
 
 lib: $(BUILD)/librvm.a
 
+# TEST_ARGS goes straight to the runner, e.g. `make test TEST_ARGS=-v`.
+TEST_ARGS ?=
+
 test: $(TEST_BIN)
-	./$(TEST_BIN)
+	./$(TEST_BIN) $(TEST_ARGS)
 
 $(TEST_BIN): $(TEST_OBJ) $(BUILD)/librvm.a
 	@mkdir -p $(dir $@)
@@ -86,7 +106,8 @@ run: $(BIN)
 	./$(BIN) -m 256 -k vmlinux -d disk.img --create-disk --stats
 
 help:
-	@echo "targets: all test lint format dtb coverage clean run"
+	@echo "targets: all test lint format dtb coverage clean run lib"
+	@echo "variables: MODE=release|debug|sanity  WERROR=1  TEST_ARGS=-v"
 
 # Dependency tracking
 $(BUILD)/%.o: %.c

@@ -9,11 +9,11 @@
 #include "fdt.h"
 
 /* ELF64 little-endian identification */
-#define ELF_MAGIC0 0x7F
-#define ELFCLASS64 2
+#define ELF_MAGIC0  0x7F
+#define ELFCLASS64  2
 #define ELFDATA2LSB 1
-#define EM_RISCV 243
-#define PT_LOAD 1
+#define EM_RISCV    243
+#define PT_LOAD     1
 
 typedef struct loader_stats {
     u64 segments;
@@ -34,14 +34,14 @@ rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size);
 typedef struct dtb_opts {
     u64 ram_base;
     u64 ram_size;
-    const char *model;      /* "rvm,virt" */
-    const char *bootargs;   /* kernel command line */
-    const char *isa;        /* "rv64imafdc" */
-    const char *mmu_type;   /* "riscv,sv57" */
-    u32 n_virtio;           /* how many virtio-mmio nodes to emit */
-    u64 initrd_start;       /* 0 when there is no initrd */
+    const char *model;    /* "rvm,virt" */
+    const char *bootargs; /* kernel command line */
+    const char *isa;      /* "rv64imafdc" */
+    const char *mmu_type; /* "riscv,sv57" */
+    u32 n_virtio;         /* how many virtio-mmio nodes to emit */
+    u64 initrd_start;     /* 0 when there is no initrd */
     u64 initrd_end;
-    u32 timebase_hz;        /* CLINT frequency, 10 MHz by default */
+    u32 timebase_hz; /* CLINT frequency, 10 MHz by default */
     const char *stdout_path;
 } dtb_opts;
 

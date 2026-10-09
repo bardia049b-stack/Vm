@@ -10,8 +10,8 @@
 
 #define PLIC_MAX_SRC 64
 #define PLIC_NUM_CTX 2 /* ctx 0 = hart0 M-mode, ctx 1 = hart0 S-mode */
-#define PLIC_CTX_M 0
-#define PLIC_CTX_S 1
+#define PLIC_CTX_M   0
+#define PLIC_CTX_S   1
 
 typedef struct plic {
     u32 priority[PLIC_MAX_SRC];
