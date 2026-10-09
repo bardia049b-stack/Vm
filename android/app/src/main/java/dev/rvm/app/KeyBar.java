@@ -34,17 +34,17 @@ public final class KeyBar extends LinearLayout {
         setBackgroundColor(0xFFEDEBE6);
         setPadding(dp(4), dp(2), dp(4), dp(2));
 
-        add(textKey("Ctrl", new byte[] { 0 }, true));
-        add(textKey("Esc", new byte[] { 27 }, false));
-        add(textKey("Tab", new byte[] { '\t' }, false));
-        add(arrowKey(R.drawable.ic_arrow_up, new byte[] { 27, '[', 'A' }));
-        add(arrowKey(R.drawable.ic_arrow_down, new byte[] { 27, '[', 'B' }));
-        add(arrowKey(R.drawable.ic_arrow_left, new byte[] { 27, '[', 'D' }));
-        add(arrowKey(R.drawable.ic_arrow_right, new byte[] { 27, '[', 'C' }));
-        add(textKey("^C", new byte[] { 3 }, false));
-        add(textKey("^D", new byte[] { 4 }, false));
-        add(textKey("^L", new byte[] { 12 }, false));
-        add(iconKey(R.drawable.ic_keyboard, null));
+        addView(textKey("Ctrl", new byte[] { 0 }, true));
+        addView(textKey("Esc", new byte[] { 27 }, false));
+        addView(textKey("Tab", new byte[] { '\t' }, false));
+        addView(arrowKey(R.drawable.ic_arrow_up, new byte[] { 27, '[', 'A' }));
+        addView(arrowKey(R.drawable.ic_arrow_down, new byte[] { 27, '[', 'B' }));
+        addView(arrowKey(R.drawable.ic_arrow_left, new byte[] { 27, '[', 'D' }));
+        addView(arrowKey(R.drawable.ic_arrow_right, new byte[] { 27, '[', 'C' }));
+        addView(textKey("^C", new byte[] { 3 }, false));
+        addView(textKey("^D", new byte[] { 4 }, false));
+        addView(textKey("^L", new byte[] { 12 }, false));
+        addView(iconKey(R.drawable.ic_keyboard, null));
     }
 
     public void setSender(Sender s) { sender = s; }
