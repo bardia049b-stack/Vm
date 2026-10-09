@@ -34,9 +34,9 @@ typedef int64_t s64;
 
 #define RVM_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
-#define RVM_ALIGN_UP(v, a)   (((v) + ((a)-1)) & ~((__typeof__(v))(a)-1))
-#define RVM_ALIGN_DOWN(v, a) ((v) & ~((__typeof__(v))(a)-1))
-#define RVM_IS_ALIGNED(v, a) (((v) & ((__typeof__(v))(a)-1)) == 0)
+#define RVM_ALIGN_UP(v, a)   (((v) + ((a) - 1)) & ~((__typeof__(v))(a) - 1))
+#define RVM_ALIGN_DOWN(v, a) ((v) & ~((__typeof__(v))(a) - 1))
+#define RVM_IS_ALIGNED(v, a) (((v) & ((__typeof__(v))(a) - 1)) == 0)
 
 #define RVM_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define RVM_MAX(a, b) ((a) > (b) ? (a) : (b))

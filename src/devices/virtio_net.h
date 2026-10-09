@@ -8,11 +8,12 @@
 
 #include "virtio.h"
 
-#define VIRTIO_NET_F_MAC    5
-#define VIRTIO_NET_F_STATUS 16
+#define VIRTIO_NET_F_MAC     5
+#define VIRTIO_NET_F_STATUS  16
 #define VIRTIO_NET_S_LINK_UP 1
 
-#define VIRTIO_NET_HDR_SIZE 12 /* modern: flags,gso,hdr_len,gso_size,csum_start,csum_offset,num_buffers */
+#define VIRTIO_NET_HDR_SIZE                                                                        \
+    12 /* modern: flags,gso,hdr_len,gso_size,csum_start,csum_offset,num_buffers */
 
 typedef struct virtio_net virtio_net;
 

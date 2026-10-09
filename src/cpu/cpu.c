@@ -210,7 +210,7 @@ static bool fetch(cpu *c, u32 *insn, u32 *len, u32 *cause) {
 #define RS2(i) ((u32)((i) >> 20) & 0x1F)
 #define F3(i)  ((u32)((i) >> 12) & 0x7)
 #define F7(i)  ((u32)((i) >> 25) & 0x7F)
-#define OP(i)  ((u32)(i)&0x7F)
+#define OP(i)  ((u32)(i) & 0x7F)
 
 static inline s32 imm_i(u32 i) {
     return sext((s32)i >> 20, 12);

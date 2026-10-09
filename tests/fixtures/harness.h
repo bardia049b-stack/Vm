@@ -257,6 +257,6 @@ static inline u32 ENC_J(u32 op, u32 rd, s32 imm) {
 #define FMIN_D(rd, rs1, rs2, rm)    ENC_R(OP_OPFP, rd, rm, rs1, rs2, 0x15)
 #define FSGNJ_D(rd, rs1, rs2, mode) ENC_R(OP_OPFP, rd, mode, rs1, rs2, 0x11)
 #define FMADD_D(rd, rs1, rs2, rs3, rm)                                                             \
-    ((((u32)(rs3)&0x1F) << 27) | ENC_R(OP_FMADD, rd, rm, rs1, rs2, 0x01))
+    ((((u32)(rs3) & 0x1F) << 27) | ENC_R(OP_FMADD, rd, rm, rs1, rs2, 0x01))
 
 #endif /* RVM_HARNESS_H */
