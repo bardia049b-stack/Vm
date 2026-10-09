@@ -27,11 +27,14 @@ endif
 # _POSIX_C_SOURCE unlocks pread/pwrite/ftruncate/nanosleep under strict -std=c11.
 DEFS     ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 CFLAGS   ?= $(CSTD) $(DEFS) $(OPT) $(WARNINGS) -Isrc -fno-omit-frame-pointer
+# EXTRA_CFLAGS / EXTRA_LDFLAGS are appended last, so they can override -O.
+CFLAGS   += $(EXTRA_CFLAGS)
 LDFLAGS  ?=
 # MODE=sanity needs the sanitizer runtime at link time too.
 ifeq ($(MODE),sanity)
 LDFLAGS  += -fsanitize=address,undefined
 endif
+LDFLAGS  += $(EXTRA_LDFLAGS)
 LDLIBS   ?= -lm
 
 BUILD    := build
@@ -95,8 +98,13 @@ dtb: dtb/rvm.dtb
 dtb/rvm.dtb: dtb/rvm.dts
 	dtc -I dts -O dtb -o $@ $<
 
-coverage: CFLAGS += --coverage -O0
-coverage: clean test
+# Two sequential sub-makes, not `coverage: clean test`.  With clean as a
+# prerequisite, -j runs it concurrently with the compiles and deletes build/
+# out from under them ("cannot open build/.../harness.gcno").  -j is inherited
+# through MAKEFLAGS, so the rebuild is still parallel.
+coverage:
+	@$(MAKE) --no-print-directory clean
+	@$(MAKE) --no-print-directory test EXTRA_CFLAGS='--coverage -O0' EXTRA_LDFLAGS='--coverage'
 
 clean:
 	rm -rf $(BUILD) $(BIN) $(TEST_BIN) *.gcda *.gcno
