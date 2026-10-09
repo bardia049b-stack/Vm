@@ -308,7 +308,7 @@ static void handle_ip(net_user *n, const u8 *eth, u32 len) {
     if ((ip[0] >> 4) != 4) return;
     u32 ihl = (ip[0] & 0xf) * 4;
     u16 tot = (u16)((ip[2] << 8) | ip[3]);
-    if (ETH_HLEN + tot > len) tot = (u16)(len - ETH_HLEN);
+    if ((u32)(ETH_HLEN + tot) > len) tot = (u16)(len - ETH_HLEN);
     if (tot < ihl) return;
     u32 src = ((u32)ip[12] << 24) | ((u32)ip[13] << 16) | ((u32)ip[14] << 8) | ip[15];
     u32 dst = ((u32)ip[16] << 24) | ((u32)ip[17] << 16) | ((u32)ip[18] << 8) | ip[19];
