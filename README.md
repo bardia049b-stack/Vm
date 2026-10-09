@@ -17,7 +17,7 @@ RV64IMAFDC · Sv39/48/57 · virtio · SBI v2.0 · C11, libc and libm only
 
 ---
 
-## Why
+ Why
 
 Most RISC-V emulators are either a teaching toy for RV32I or a fork of QEMU.
 RVM is neither: it is small enough to read end to end, complete enough to run
@@ -28,7 +28,7 @@ The whole thing is C. There is no C++, no Rust, no JIT-only fast path that
 breaks when it is wrong, and no build system beyond GNU Make (plus one CMake
 file the Android NDK requires).
 
-## Quick start
+ Quick start
 
 ```sh
 git clone https://github.com/bardia049b-stack/Vm.git
@@ -61,7 +61,7 @@ root@rvm:~# curl -sI https://deb.debian.org | head -1
 Debian or Ubuntu host. See [docs/BUILDING.md](docs/BUILDING.md) for what to do
 if you cannot.
 
-## What is implemented
+ What is implemented
 
 | Area | Status |
 | --- | --- |
@@ -81,7 +81,7 @@ The first seven rows are real, compiling, passing code. The rest are designed
 and scheduled; [PLAN.md](PLAN.md) is the authoritative list with acceptance
 criteria per step.
 
-## The machine
+ The machine
 
 ```
   0x0200_0000  CLINT        msip / mtimecmp / mtime, 10 MHz timebase
@@ -96,7 +96,7 @@ One hart. `compatible = "rvm,virt"`, `riscv,isa = "rv64imafdc"`,
 [`dtb/rvm.dts`](dtb/rvm.dts) for editing and as `src/loader/fdt.c` for machines
 without `dtc` — and `test_fdt_blob` keeps them agreeing.
 
-## Layout
+ Layout
 
 ```
 src/
@@ -120,7 +120,7 @@ docs/         ARCHITECTURE.md, BUILDING.md, DEBUGGING.md
 compressed instructions are *expanded* rather than executed separately, and why
 every non-branching instruction path falls through to a single `pc` epilogue.
 
-## Android
+ Android
 
 The APK is one `android.app.Activity`, three custom Views and one native
 library:
@@ -141,7 +141,7 @@ is not one PNG in the repository. CI fails the build if the APK exceeds 5 MiB.
 cd android && gradle assembleDebug     # needs the NDK and CMake 3.22.1
 ```
 
-## Testing
+ Testing
 
 ```sh
 make test                 # build and run
@@ -169,14 +169,14 @@ CHECK_U64(t.cpu.x[X_A1], 0);   /* the store-conditional succeeded */
 th_free(&t);
 ```
 
-## Performance
+ Performance
 
 Interpreted, with a `switch` per instruction and a direct-mapped TLB. The
 hot-block cache in PLAN.md step 12 is what takes it past 500 MIPS; until then,
 boot to a login prompt and expect it to be slow but correct. Correctness is
 the part that is done and tested.
 
-## Contributing
+ Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: `make lint` and
 `make test` must both pass, clang-format 15 decides the style, and a new
