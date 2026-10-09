@@ -79,13 +79,17 @@ if [ -z "$ARCHIVE" ]; then
             || die "cannot read $MIRROR/dists/$SUITE/$COMPONENT/binary-riscv64/Packages.gz"
         gunzip -f "$IDX"
         # Newest linux-image-*-riscv64 by version sort.
+        # Print the version and the full package name as they appear in the
+        # index.  An earlier version stripped the "linux-image-" prefix with
+        # substr($2, 9), which is off by four and produced names like
+        # linux-image-age-6.12.107+deb13-riscv64 that no pool path matches.
         VERSION="$(awk '
-            /^Package: linux-image-[0-9].*-riscv64$/ { pkg = substr($2, 9) }
+            /^Package: linux-image-[0-9].*-riscv64$/ { pkg = $2 }
             /^Version: / && pkg != "" { print $2 "\t" pkg; pkg = "" }
         ' "$WORK/Packages" | sort -V | tail -1)"
         [ -n "$VERSION" ] || die "no linux-image-*-riscv64 found in $SUITE"
         PKGVER="${VERSION%%	*}"
-        PKGNAME="linux-image-${VERSION##*	}"
+        PKGNAME="${VERSION##*	}"
         log "newest kernel: $PKGNAME version $PKGVER"
         VERSION="$PKGVER"
         PACKAGE="$PKGNAME"

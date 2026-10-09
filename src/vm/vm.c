@@ -109,6 +109,20 @@ rvm_err vm_new(vm *v, const vm_opts *o) {
         goto fail;
     if ((e = clint_init(&v->clint)) != RVM_OK)
         goto fail;
+
+    /*
+     * Firmware duty, and the reason a kernel entered in S-mode used to die on
+     * its first page fault: with medeleg zero every S-mode trap lands in
+     * M-mode, where nothing handles it.  Delegate exactly what OpenSBI
+     * delegates, keep ecall-from-S here (that is the SBI call path the run
+     * loop interprets) and delegate the supervisor interrupt lines.
+     */
+    v->cpu.csr[CSR_MEDELEG] = (1u << EXC_INST_MISALIGNED) | (1u << EXC_INST_FAULT) |
+                              (1u << EXC_ILLEGAL_INST) | (1u << EXC_BREAKPOINT) |
+                              (1u << EXC_LOAD_MISALIGNED) | (1u << EXC_LOAD_FAULT) |
+                              (1u << EXC_STORE_MISALIGNED) | (1u << EXC_STORE_FAULT) |
+                              (1u << EXC_ECALL_U);
+    v->cpu.csr[CSR_MIDELEG] = MIP_SSIP | MIP_STIP | MIP_SEIP;
     if ((e = plic_init(&v->plic)) != RVM_OK)
         goto fail;
     if ((e = uart_init(&v->uart, RVM_UART_IRQ)) != RVM_OK)
@@ -178,21 +192,36 @@ rvm_err vm_load(vm *v) {
         return RVM_ERR_BADARG;
 
     u64 entry = 0;
-    if (o->raw_kernel) {
+    /*
+     * Order matters and the format is sniffed, not guessed from the name:
+     * ELF first, then the PE32+ wrapper the kernel's EFI stub puts around the
+     * boot Image (Debian's riscv64 /boot/vmlinux-* is exactly that, which is
+     * why an ELF-only loader silently failed to boot it), then a raw blob.
+     * --raw skips straight to the blob.
+     */
+    loader_kind kind = o->raw_kernel ? LOADER_KIND_BLOB : loader_sniff(o->kernel_path);
+    if (kind == LOADER_KIND_BLOB) {
         u64 sz = 0;
         u64 addr = o->entry_override ? o->entry_override : RVM_KERNEL_ENTRY;
         e = loader_load_blob(&v->bus, o->kernel_path, addr, &sz);
         if (e != RVM_OK)
             return e;
-        /* Linux' Image header carries its entry at offset 8. */
-        u64 hdr_entry = 0;
-        bus_load(&v->bus, addr + 8, 8, &hdr_entry);
-        entry = hdr_entry ? addr + hdr_entry : addr;
-    } else {
+        /* A plain Image is entered at its first instruction, code0. */
+        entry = addr;
+    } else if (kind == LOADER_KIND_PE) {
+        loader_stats st;
+        u64 addr = o->entry_override ? o->entry_override : RVM_KERNEL_ENTRY;
+        e = loader_load_pe(&v->bus, o->kernel_path, addr, &entry, &st);
+        if (e != RVM_OK)
+            return e;
+    } else if (kind == LOADER_KIND_ELF) {
         loader_stats st;
         e = loader_load_elf(&v->bus, o->kernel_path, &entry, &st);
         if (e != RVM_OK)
             return e;
+    } else {
+        LOG_ERROR("vm: %s is not an ELF, a PE Image or readable at all", o->kernel_path);
+        return RVM_ERR_BADARG;
     }
     if (o->entry_override)
         entry = o->entry_override;

@@ -27,6 +27,31 @@ rvm_err loader_load_elf(bus *b, const char *path, u64 *entry, loader_stats *st);
 /* Load a raw blob (Linux Image, DTB, initrd) at a guest physical address. */
 rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size);
 
+/*
+ * What a kernel file turns out to be.  Debian's riscv64 /boot/vmlinux-* is not
+ * an ELF: the kernel's EFI stub wraps the boot Image as a PE32+ executable, so
+ * the file starts with "MZ" and carries COFF sections.  sniff reads the first
+ * bytes so the loader can be picked without logging a misleading error from
+ * the format that did not match.
+ */
+typedef enum {
+    LOADER_KIND_UNKNOWN = 0,
+    LOADER_KIND_ELF,
+    LOADER_KIND_PE,
+    LOADER_KIND_BLOB
+} loader_kind;
+
+loader_kind loader_sniff(const char *path);
+
+/*
+ * Load a PE32+ EFI-stub kernel Image.  The sections are copied to base plus
+ * their virtual address and the headers, which hold the Image's first
+ * instruction, go to base itself.  Entry is base: the non-EFI kernel entry is
+ * code0 at offset 0, not the PE's AddressOfEntryPoint, which is the EFI
+ * handover and expects an EFI system table in a1.
+ */
+rvm_err loader_load_pe(bus *b, const char *path, u64 base, u64 *entry, loader_stats *st);
+
 /* ------------------------------------------------------- device tree */
 
 #define DTB_MAX_VIRTIO 8

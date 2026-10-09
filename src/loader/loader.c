@@ -188,6 +188,142 @@ rvm_err loader_load_blob(bus *b, const char *path, u64 addr, u64 *size) {
     return RVM_OK;
 }
 
+/* ------------------------------------------------- PE/COFF (EFI stub) */
+
+#define PE_MZ           0x5A4Du /* the Image header's first instruction */
+#define PE_OPT_MAGIC_64 0x020Bu /* PE32+ */
+#define PE_MACHINE_RV64 0x5064u /* IMAGE_FILE_MACHINE_RISCV64 */
+
+loader_kind loader_sniff(const char *path) {
+    u8 head[64];
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return LOADER_KIND_UNKNOWN;
+    ssize_t n = read(fd, head, sizeof head);
+    close(fd);
+    if (n < 4)
+        return LOADER_KIND_UNKNOWN;
+    if (head[0] == ELF_MAGIC0 && memcmp(head + 1, "ELF", 3) == 0)
+        return LOADER_KIND_ELF;
+    u16 mz = (u16)(head[0] | (head[1] << 8));
+    if (mz == PE_MZ && n >= 64 && memcmp(head + 0x30, "RISCV", 5) == 0)
+        return LOADER_KIND_PE;
+    return LOADER_KIND_BLOB;
+}
+
+rvm_err loader_load_pe(bus *b, const char *path, u64 base, u64 *entry, loader_stats *st) {
+    u8 *img = NULL;
+    size_t imglen = 0;
+    rvm_err rc = slurp(path, &img, &imglen);
+    if (rc != RVM_OK)
+        return rc;
+    if (st)
+        memset(st, 0, sizeof(*st));
+
+    rvm_err e = RVM_ERR_BADARG;
+    if (imglen < 0x40 || (u16)(img[0] | (img[1] << 8)) != PE_MZ)
+        goto done;
+    u64 lfanew = rd32(img + 0x3C);
+    if (lfanew + 24 > imglen || memcmp(img + lfanew, "PE\0\0", 4) != 0)
+        goto done;
+
+    u16 machine = rd16(img + lfanew + 4);
+    u16 nsec = rd16(img + lfanew + 6);
+    u16 optsz = rd16(img + lfanew + 20);
+    u64 opt = lfanew + 24;
+    if (machine != PE_MACHINE_RV64) {
+        LOG_ERROR("loader: %s is PE machine 0x%x, not riscv64", path, machine);
+        goto done;
+    }
+    if (opt + 2 > imglen || rd16(img + opt) != PE_OPT_MAGIC_64) {
+        LOG_ERROR("loader: %s is not PE32+", path);
+        goto done;
+    }
+    /* The RISCV magic is what separates a kernel Image from any other EFI
+     * application; without it we would happily load firmware. */
+    if (memcmp(img + 0x30, "RISCV", 5) != 0) {
+        LOG_ERROR("loader: %s has no RISCV Image magic at 0x30", path);
+        goto done;
+    }
+    u64 image_size = rd64(img + 0x10);
+
+    u64 sec = opt + optsz;
+    u64 min_va = UINT64_MAX, span_end = 0, raw_end = 0;
+    for (u16 i = 0; i < nsec; i++) {
+        u64 s = sec + (u64)i * 40;
+        if (s + 40 > imglen) {
+            LOG_ERROR("loader: %s section table runs past EOF", path);
+            goto done;
+        }
+        u64 va = rd32(img + s + 12);
+        u64 vsize = rd32(img + s + 8);
+        u64 rawptr = rd32(img + s + 20);
+        u64 rawsz = rd32(img + s + 16);
+        if (rawptr + rawsz > imglen) {
+            LOG_ERROR("loader: %s section %u extends past EOF", path, i);
+            goto done;
+        }
+        if (va < min_va)
+            min_va = va;
+        if (va + vsize > span_end)
+            span_end = va + vsize;
+        if (rawptr + rawsz > raw_end)
+            raw_end = rawptr + rawsz;
+    }
+    if (min_va == UINT64_MAX || span_end == 0) {
+        LOG_ERROR("loader: %s has no loadable sections", path);
+        goto done;
+    }
+    if (!bus_ram_valid(b, base, (u32)RVM_MIN(span_end, (u64)UINT32_MAX))) {
+        LOG_ERROR("loader: %s needs 0x%llx bytes at 0x%llx, outside RAM", path,
+                  (unsigned long long)span_end, (unsigned long long)base);
+        e = RVM_ERR_RANGE;
+        goto done;
+    }
+
+    /* Headers first: code0 at offset 0 is the non-EFI kernel entry. */
+    memcpy(bus_ram_ptr(b, base), img, (size_t)min_va);
+    for (u16 i = 0; i < nsec; i++) {
+        u64 s = sec + (u64)i * 40;
+        u64 va = rd32(img + s + 12);
+        u64 vsize = rd32(img + s + 8);
+        u64 rawptr = rd32(img + s + 20);
+        u64 rawsz = rd32(img + s + 16);
+        u8 *dst = bus_ram_ptr(b, base + va);
+        if (rawsz)
+            memcpy(dst, img + rawptr, (size_t)rawsz);
+        if (vsize > rawsz)
+            memset(dst + rawsz, 0, (size_t)(vsize - rawsz));
+        if (st) {
+            st->segments++;
+            st->bytes += rawsz;
+        }
+    }
+    if (st) {
+        st->lowest = base;
+        st->highest = base + span_end;
+    }
+    /*
+     * Enter at the first byte of .text, not at base.  Offset 0 of the file is
+     * the DOS header whose first instruction only exists to make the image a
+     * valid PE; the kernel's own _head is the start of the first section.
+     * Entering at 0 executes header bytes as instructions, leaves ra unset and
+     * ends in a c.jr ra into a zero page some millions of instructions later.
+     */
+    if (entry)
+        *entry = base + min_va;
+
+    LOG_INFO("loader: %s is a PE32+ EFI-stub Image: %u sections, %llu byte image "
+             "at 0x%llx, entry 0x%llx",
+             path, nsec, (unsigned long long)(image_size ? image_size : span_end),
+             (unsigned long long)base, (unsigned long long)(base + min_va));
+    e = RVM_OK;
+
+done:
+    free(img);
+    return e;
+}
+
 /* ------------------------------------------------------- device tree */
 
 rvm_err dtb_build(const dtb_opts *o, u8 **out, u32 *out_len) {
