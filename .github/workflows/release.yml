@@ -81,6 +81,23 @@ jobs:
           cp android/app/build/outputs/apk/release/*.apk out/rvm.apk
           ls -l out/
 
+      # A green gradle build does not mean a working app. See android.yml.
+      - name: Check the APK actually contains the app
+        run: |
+          LIST=$(unzip -l out/rvm.apk)
+          echo "$LIST"
+          fail() { echo "::error::$1"; exit 1; }
+          echo "$LIST" | grep -q 'classes[0-9]*\.dex' || fail "no classes.dex"
+          for abi in arm64-v8a x86_64; do
+            echo "$LIST" | grep -q "lib/$abi/librvm_jni.so" \
+              || fail "no lib/$abi/librvm_jni.so"
+          done
+          unzip -p out/rvm.apk 'classes*.dex' > /tmp/classes.dex
+          for sym in MainActivity RvmNative RvmView GfxView KeyBar; do
+            grep -aq "$sym" /tmp/classes.dex || fail "$sym missing from dex"
+          done
+          echo "the APK carries all five classes and both ABIs"
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-apk

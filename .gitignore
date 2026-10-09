@@ -7,8 +7,11 @@
 *.elf
 *.bin
 *.map
-rvm
-rvm.exe
+# Anchored: an unanchored `rvm` also matched android/app/src/main/java/dev/rvm/app/,
+# which silently kept every Java source out of the repository and produced an APK
+# with no classes.dex in it.
+/rvm
+/rvm.exe
 build/
 out/
 dist/
@@ -28,10 +31,10 @@ test-report.xml
 *.img
 *.qcow2
 *.raw
-vmlinux
-vmlinux-*
-Image
-Image.gz
+/vmlinux
+/vmlinux-*
+/Image
+/Image.gz
 *.dtb
 rootfs/
 initrd*

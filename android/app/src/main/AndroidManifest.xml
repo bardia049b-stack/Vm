@@ -31,7 +31,6 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/RvmTheme"
         android:allowBackup="false"
-        android:extractNativeLibs="false"
         android:hardwareAccelerated="true"
         android:supportsRtl="false"
         android:largeHeap="false"
