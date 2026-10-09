@@ -46,5 +46,13 @@ void test_clint_mtimecmp(void) {
     CHECK_U64(t.clint.mtime, 12345);
     CHECK(clint_tick(&t.clint) == (MIP_MTIP) || true);
     CHECK_U64(clint_mtime(&t.clint), 12345);
+
+    /* rdtime must report mtime.  clint_tick() returns the interrupt bits it
+     * drives, so feeding its result into cpu.hw_time made CSR_TIME read as 0. */
+    t.cpu.hw_time = clint_mtime(&t.clint);
+    bool bad = false;
+    CHECK_U64(csr_read(&t.cpu, CSR_TIME, &bad), 12345);
+    CHECK(!bad);
+
     th_free(&t);
 }

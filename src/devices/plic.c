@@ -31,15 +31,25 @@ void plic_raise(plic *p, u32 src) {
 /* Highest-priority pending+enabled source for a context (0 when none). */
 static u32 best_source(const plic *p, u32 ctx) {
     u32 best = 0, best_prio = 0;
-    for (u32 s = 1; s < PLIC_MAX_SRC; s++) {
-        if (!(p->pending[s / 32] & (1u << (s % 32))))
+    /* Walk the pending bitmaps a word at a time and skip any word with nothing
+     * pending *and* enabled.  This runs twice per interrupt refresh, and the
+     * overwhelmingly common answer is "no source", which used to cost a scan of
+     * all PLIC_MAX_SRC sources and dominated the whole run loop. */
+    for (u32 w = 0; w < RVM_ARRAY_SIZE(p->pending); w++) {
+        u32 bits = p->pending[w] & p->enable[ctx][w];
+        if (bits == 0)
             continue;
-        if (!(p->enable[ctx][s / 32] & (1u << (s % 32))))
-            continue;
-        u32 pr = p->priority[s];
-        if (pr > best_prio && pr > p->threshold[ctx]) {
-            best_prio = pr;
-            best = s;
+        for (u32 i = 0; i < 32; i++) {
+            if (!(bits & (1u << i)))
+                continue;
+            u32 s = w * 32 + i;
+            if (!src_valid(s))
+                continue;
+            u32 pr = p->priority[s];
+            if (pr > best_prio && pr > p->threshold[ctx]) {
+                best_prio = pr;
+                best = s;
+            }
         }
     }
     return best;

@@ -22,6 +22,7 @@ INITRD=""
 MEM=1024
 BOOTARGS="console=ttyS0 earlycon=sbi root=/dev/vda rw rootwait"
 NET=0
+GDB=0
 TAP="rvm0"
 TAP_ADDR="10.0.2.1/24"
 EXTRA=()
@@ -37,7 +38,12 @@ usage: $(basename "$0") [options] [-- extra ./rvm arguments]
   -m, --mem MIB        guest RAM in MiB        (default: $MEM)
   -a, --bootargs STR   kernel command line
       --net            attach virtio-net on the '$TAP' TAP device
+                       (needs a build with virtio-net; see PLAN.md step 9)
       --tap NAME       TAP device name         (default: $TAP)
+      --trace-from PC  open the instruction trace at that guest PC
+      --trace          trace every retired instruction (large!)
+      --stats          print instruction counters on exit
+      --gdb            run the emulator itself under gdb
       --create-disk    create the disk if it is missing
   -h, --help           this text
 
@@ -46,8 +52,10 @@ Examples
       ./scripts/build.sh && ./tools/run.sh
   Boot Debian with networking:
       sudo ./tools/run.sh --net
-  Debug a jump-to-data bug:
-      ./tools/run.sh -- --trace --stats
+  Debug a jump-to-data bug (trace only from the last known good PC):
+      ./tools/run.sh --trace-from 0x80200000
+  Debug the emulator itself:
+      ./tools/run.sh --gdb
 USAGE
 }
 
@@ -62,6 +70,10 @@ while [ $# -gt 0 ]; do
         -a|--bootargs) BOOTARGS="$2"; shift 2 ;;
         --net)         NET=1; shift ;;
         --tap)         TAP="$2"; shift 2 ;;
+        --trace-from)  EXTRA+=(--trace-from "$2"); shift 2 ;;
+        --trace)       EXTRA+=(--trace); shift ;;
+        --stats)       EXTRA+=(--stats); shift ;;
+        --gdb)         GDB=1; shift ;;
         --create-disk) CREATE_DISK=1; shift ;;
         -h|--help)     usage; exit 0 ;;
         --)            shift; EXTRA=("$@"); break ;;
@@ -98,6 +110,11 @@ fi
 # virtio-net is bridged to a TAP device.  The VM does the ARP/DHCP/NAT itself,
 # so all the host needs is the interface and IP forwarding.  See PLAN.md step 9.
 if [ "$NET" = 1 ]; then
+    # Failing here rather than after the TAP device exists: virtio-net is
+    # PLAN.md step 9, so most builds of rvm do not know --net at all.
+    if ! ./rvm --help 2>&1 | grep -q -- '--net'; then
+        die "this build of ./rvm has no --net; virtio-net is PLAN.md step 9"
+    fi
     [ "$(id -u)" = 0 ] || die "--net needs root to create the TAP device"
     if ! ip link show "$TAP" >/dev/null 2>&1; then
         log "creating TAP device $TAP"
@@ -129,6 +146,13 @@ ARGS=(-m "$MEM" -k "$KERNEL" -B "$BOOTARGS")
 [ -n "$DTB" ]    && ARGS+=(-t "$DTB")
 [ -n "$INITRD" ] && ARGS+=(-i "$INITRD")
 [ -n "$DISK" ]   && ARGS+=(-d "$DISK")
+
+if [ "$GDB" = 1 ]; then
+    command -v gdb >/dev/null || die "--gdb needs gdb installed"
+    log "exec: gdb --args ./rvm ${ARGS[*]} ${EXTRA[*]:-}"
+    log "     (this debugs the emulator; the guest is traced with --trace-from)"
+    exec gdb --args ./rvm "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"}
+fi
 
 log "exec: ./rvm ${ARGS[*]} ${EXTRA[*]:-}"
 exec ./rvm "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"}

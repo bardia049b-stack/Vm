@@ -79,6 +79,9 @@ typedef struct vm {
     /* Written by vm_stop() from any thread (the Android UI, a signal handler)
      * and read by the run loop, so it has to be atomic. */
     _Atomic bool running;
+    /* Set by irq_raise() when a device moves a line; lets the run loop refresh
+     * mip immediately instead of waiting out the poll interval. */
+    bool irq_dirty;
     u32 exit_code;
     u64 insns;
     u64 start_ns;

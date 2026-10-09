@@ -64,12 +64,16 @@ u64 th_emit16(th *t, u16 insn) {
     return a;
 }
 
+/* clint_tick() returns the MIP bits it drives; mtime comes from clint_mtime().
+ * Conflating the two is what made CSR_TIME read as 0 in the emulator. */
+static void th_refresh(th *t) {
+    t->cpu.hw_mip = clint_tick(&t->clint) | plic_update(&t->plic);
+    t->cpu.hw_time = clint_mtime(&t->clint);
+}
+
 void th_run(th *t, u32 n) {
     for (u32 i = 0; i < n; i++) {
-        t->cpu.hw_time = clint_tick(&t->clint);
-        t->cpu.hw_mip = plic_update(&t->plic);
-        if (t->clint.mtime >= t->clint.mtimecmp[0])
-            t->cpu.hw_mip |= MIP_MTIP;
+        th_refresh(t);
         step_result r = cpu_step(&t->cpu);
         t->steps++;
         if (r == STEP_TRAP && t->cpu.last_cause == EXC_ECALL_S) {
@@ -88,10 +92,7 @@ void th_run_all(th *t) {
     for (u32 i = 0; i < 8192; i++) {
         if (t->cpu.pc >= t->code)
             return; /* every emitted instruction has run */
-        t->cpu.hw_time = clint_tick(&t->clint);
-        t->cpu.hw_mip = plic_update(&t->plic);
-        if (t->clint.mtime >= t->clint.mtimecmp[0])
-            t->cpu.hw_mip |= MIP_MTIP;
+        th_refresh(t);
         step_result r = cpu_step(&t->cpu);
         t->steps++;
         if (r == STEP_FAULT || r == STEP_SHUTDOWN || r == STEP_ECALL_M)

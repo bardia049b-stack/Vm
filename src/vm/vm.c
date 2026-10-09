@@ -36,6 +36,8 @@ static void irq_raise(void *ud, u32 irq, bool level) {
      * edge needs no action here. */
     if (level)
         plic_raise(&v->plic, irq);
+    /* Either edge can change what the guest should see in mip. */
+    v->irq_dirty = true;
 }
 
 static void uart_emit(void *ud, u8 ch) {
@@ -254,6 +256,28 @@ rvm_err vm_load(vm *v) {
 
 /* --------------------------------------------------------------- run */
 
+/*
+ * Polling host input is a read() syscall and refreshing the time base is a
+ * clock_gettime(), so doing both on every retired instruction costs several
+ * times more than the instruction itself -- measured at ~385 ns/instruction,
+ * i.e. 2.6 MIPS, before this was throttled.  Refresh every RVM_POLL_INTERVAL
+ * instructions *and* immediately whenever a device moves an interrupt line, so
+ * latency is bounded by device activity rather than by the period.  256
+ * instructions is far below a millisecond at any speed RVM reaches today, and
+ * the CLINT's own MMIO read path advances mtime itself.
+ */
+#define RVM_POLL_INTERVAL 256u
+
+/* Advance mtime and recompute what the guest sees in mip. */
+static void refresh_interrupts(vm *v) {
+    /* clint_tick() returns the MSIP/MTIP bits it drives -- *not* mtime.  The
+     * two used to be conflated, which made CSR_TIME (rdtime) read as 0 and
+     * broke the guest's clocksource. */
+    u64 bits = clint_tick(&v->clint);
+    v->cpu.hw_time = clint_mtime(&v->clint);
+    v->cpu.hw_mip = bits | plic_update(&v->plic);
+}
+
 static void pump_input(vm *v) {
     if (!v->opts.poll)
         return;
@@ -289,19 +313,10 @@ rvm_err vm_run(vm *v) {
     v->running = true;
 
     while (v->running) {
-        pump_input(v);
-
-        /* Refresh the interrupt lines and the guest-visible time base. */
-        v->cpu.hw_time = clint_tick(&v->clint);
-        v->cpu.hw_mip = 0;
-        {
-            u64 bits = 0;
-            if (v->clint.msip[0] & 1)
-                bits |= MIP_MSIP;
-            if (v->clint.mtime >= v->clint.mtimecmp[0])
-                bits |= MIP_MTIP;
-            bits |= plic_update(&v->plic);
-            v->cpu.hw_mip = bits;
+        if (v->irq_dirty || (v->insns % RVM_POLL_INTERVAL) == 0) {
+            pump_input(v);
+            refresh_interrupts(v);
+            v->irq_dirty = false;
         }
 
         step_result r = cpu_step(&v->cpu);
@@ -328,6 +343,12 @@ rvm_err vm_run(vm *v) {
         case STEP_WFI:
             v->cpu.pc += v->cpu.last_insn_len ? v->cpu.last_insn_len : 4;
             v->cpu.instret++;
+            /* hw_mip can be up to RVM_POLL_INTERVAL instructions stale, and
+             * going to sleep on a stale "nothing pending" is the one place
+             * where that would actually hang the guest. */
+            pump_input(v);
+            refresh_interrupts(v);
+            v->irq_dirty = false;
             if (!(v->cpu.hw_mip & v->cpu.csr[CSR_MIE]))
                 idle_until_timer(v);
             break;
@@ -372,7 +393,10 @@ void vm_stop(vm *v, u32 code) {
 void vm_print_stats(const vm *v) {
     u64 elapsed = rvm_now_ns() - v->start_ns;
     double secs = elapsed ? (double)elapsed / 1e9 : 1e-9;
-    double mips = (double)v->insns / elapsed / 1.0; /* instructions per ns == MIPS */
+    /* Written out long hand: instructions per second, divided by a million.
+     * Instructions per nanosecond is *not* MIPS -- that is off by 1000x, and
+     * PLAN.md step 12 measures the JIT against this number. */
+    double mips = (elapsed > 0) ? (double)v->insns / secs / 1e6 : 0.0;
     fprintf(stderr,
             "\n--- RVM statistics -------------------------------------------\n"
             "  instructions retired : %llu\n"

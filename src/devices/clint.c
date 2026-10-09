@@ -37,6 +37,11 @@ bool clint_load(void *dev, u64 off, u32 size, u64 *out) {
     clint *c = (clint *)dev;
     *out = 0;
     if (off >= CLINT_MTIME_OFF) {
+        /* The run loop only refreshes mtime every few hundred instructions, so
+         * an explicit MMIO read has to advance it itself or the guest sees a
+         * clocksource that stands still between refreshes. */
+        if (c->free_running)
+            clint_tick(c);
         u64 v = c->mtime;
         u32 idx = (u32)((off - CLINT_MTIME_OFF) / 4);
         *out = (size == 8) ? v : (u32)((v >> (32 * (idx & 1))) & 0xFFFFFFFFu);
