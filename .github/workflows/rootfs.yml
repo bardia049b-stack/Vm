@@ -1,18 +1,28 @@
 name: rootfs
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (must already exist)'
+        required: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: install tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y debootstrap qemu-user-static e2fsprogs
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap qemu-user-static e2fsprogs
 
       - name: build rootfs
         run: |
@@ -34,10 +44,17 @@ jobs:
           sudo cp -a /srv/rootfs/* /mnt/rootfs/
           sudo umount /mnt/rootfs
           sudo gzip -k /srv/disk.img
+          ls -la /srv/disk.img.gz
 
-      - name: upload
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: disk-img
           path: /srv/disk.img.gz
-          retention-days: 7
+          retention-days: 30
+
+      - name: publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: /srv/disk.img.gz
+          fail_on_unmatched_files: false
