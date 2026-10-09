@@ -317,7 +317,7 @@ rvm_err loader_load_pe(bus *b, const char *path, u64 base, u64 *entry, loader_st
      * spins in a page-fault loop at its own 1: label.
      */
     if (entry)
-        *entry = base;
+        *entry = base + min_va;
 
     LOG_INFO("loader: %s is a PE32+ EFI-stub Image: %u sections, %llu byte image "
              "at 0x%llx, entry 0x%llx",
