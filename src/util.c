@@ -58,7 +58,7 @@ static const char *level_name(rvm_loglevel l) {
 }
 
 void rvm_vlog(rvm_loglevel lvl, const char *fmt, va_list ap) {
-    if (lvl < g_level)
+    if (lvl < g_level || fmt == NULL)
         return;
     FILE *out = (lvl >= RVM_LOG_WARN) ? stderr : stdout;
     fprintf(out, "[%s] ", level_name(lvl));

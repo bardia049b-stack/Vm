@@ -109,7 +109,7 @@ static inline s32 imm_16sp(u16 c) {
 /* c.lui immediate, pre-shifted into bits [31:12] */
 static inline s32 imm_clui(u16 c) {
     s32 v = sx((((c >> 12) & 1) << 5) | ((c >> 2) & 0x1F), 6);
-    return v << 12;
+    return (s32)((u32)v << 12); /* v may be negative; shift it unsigned */
 }
 
 /* c.addi4spn immediate */

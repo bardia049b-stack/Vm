@@ -447,7 +447,8 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res) {
         s32 r = 0;
         switch (f3) {
         case 0x0:
-            r = w + (s32)imm;
+            /* addiw wraps: do it in u32 so the host cannot overflow. */
+            r = (s32)((u32)w + (u32)(s32)imm);
             break;
         case 0x1: {
             u32 sh = (u32)(insn >> 20) & 0x1F;
@@ -476,7 +477,10 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res) {
         if (f7 == 0x01) { /* M extension */
             switch (f3) {
             case 0x0:
-                r = (u64)(sa * sb);
+                /* mul keeps the low 64 bits, which is the same for a signed
+                 * and an unsigned product -- and only the unsigned one is
+                 * defined when it wraps. */
+                r = a * b;
                 break;
             case 0x1:
                 r = (u64)(((__int128)sa * (__int128)sb) >> 64);
@@ -530,7 +534,7 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res) {
                 TRAP_ILLEGAL();
             switch (f3) {
             case 0x0:
-                r = (f7 == 0x20) ? (u64)(sa - sb) : a + b;
+                r = (f7 == 0x20) ? (a - b) : (a + b);
                 break;
             case 0x1:
                 r = a << (b & 63);
@@ -593,7 +597,7 @@ bool cpu_exec32(cpu *c, u32 insn, step_result *res) {
                 TRAP_ILLEGAL();
             switch (f3) {
             case 0x0:
-                r = (f7 == 0x20) ? (w1 - w2) : (w1 + w2);
+                r = (f7 == 0x20) ? (s32)((u32)w1 - (u32)w2) : (s32)((u32)w1 + (u32)w2);
                 break;
             case 0x1:
                 if (f7 != 0x00)

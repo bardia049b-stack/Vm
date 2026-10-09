@@ -30,17 +30,19 @@ static size_t build_elf(u8 *buf, u64 entry, u64 paddr, const u8 *payload, u32 pl
 #define PUT16(off, v)                                                                              \
     do {                                                                                           \
         buf[(off)] = (u8)(v);                                                                      \
-        buf[(off) + 1] = (u8)((v) >> 8);                                                           \
+        buf[(off) + 1] = (u8)(((u16)(v)) >> 8);                                                    \
     } while (0)
+/* Cast to the full width first: a caller may pass an int or u32 constant, and
+ * shifting a 32-bit value by 32 is undefined. */
 #define PUT32(off, v)                                                                              \
     do {                                                                                           \
         for (u32 _i = 0; _i < 4; _i++)                                                             \
-            buf[(off) + _i] = (u8)((v) >> (8 * _i));                                               \
+            buf[(off) + _i] = (u8)(((u32)(v)) >> (8 * _i));                                        \
     } while (0)
 #define PUT64(off, v)                                                                              \
     do {                                                                                           \
         for (u32 _i = 0; _i < 8; _i++)                                                             \
-            buf[(off) + _i] = (u8)((v) >> (8 * _i));                                               \
+            buf[(off) + _i] = (u8)(((u64)(v)) >> (8 * _i));                                        \
     } while (0)
 
     PUT16(16, 2);        /* e_type = ET_EXEC */

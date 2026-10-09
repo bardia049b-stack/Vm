@@ -114,7 +114,9 @@ mount --bind /proc "$ROOTDIR/proc" 2>/dev/null || true
 mount --bind /sys  "$ROOTDIR/sys"  2>/dev/null || true
 umount_chroot() {
     for m in dev proc sys; do
-        mountpoint -q "$ROOTDIR/$m" && umount -l "$ROOTDIR/$m" || true
+        if mountpoint -q "$ROOTDIR/$m"; then
+            umount -l "$ROOTDIR/$m" || true
+        fi
     done
 }
 trap 'umount_chroot; if [ -n "$CLEANUP" ]; then rm -rf "$CLEANUP"; fi' EXIT

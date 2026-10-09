@@ -255,13 +255,19 @@ bool fp_exec(cpu *c, u32 insn, step_result *res);
 u32 c_expand(u16 ci, bool *illegal);
 
 /* Sign-extension helpers used all over the decoder. */
+/* Sign-extend the low `bits` of v.  The shift left is done on the *unsigned*
+ * value: shifting a negative signed value left is undefined behaviour (UBSan
+ * flags it), while the unsigned shift is exact and the reinterpretation back is
+ * two's complement on every target we build for. */
 static inline s32 sext(s64 v, u32 bits) {
     u32 sh = 32 - bits;
-    return ((s32)(v << sh)) >> sh;
+    s32 t = (s32)((u32)v << sh);
+    return t >> sh;
 }
 static inline s64 sext64(u64 v, u32 bits) {
-    u64 m = 1ULL << (bits - 1);
-    return (s64)((v ^ m) - m);
+    u32 sh = 64 - bits;
+    s64 t = (s64)(v << sh);
+    return t >> sh;
 }
 
 #endif /* RVM_CPU_H */
