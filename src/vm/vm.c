@@ -366,10 +366,9 @@ rvm_err vm_run(vm *v) {
              */
             if (v->trap_log < 16 || (v->trap_log & 0xFFFFFu) == 0) {
                 LOG_DEBUG("vm: trap %llu cause=%llu tval=0x%llx pc=0x%llx from priv=%u",
-                          (unsigned long long)v->trap_log,
-                          (unsigned long long)(cause & 0x3F),
-                          (unsigned long long)v->cpu.last_tval,
-                          (unsigned long long)v->cpu.pc, v->cpu.last_from_priv);
+                          (unsigned long long)v->trap_log, (unsigned long long)(cause & 0x3F),
+                          (unsigned long long)v->cpu.last_tval, (unsigned long long)v->cpu.pc,
+                          v->cpu.last_from_priv);
             }
             v->trap_log++;
             if (!is_irq && (cause & 0x3F) == EXC_ECALL_S && v->cpu.last_from_priv == PRV_S) {

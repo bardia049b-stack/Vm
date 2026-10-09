@@ -15,8 +15,8 @@
  *
  * SPDX-License-Identifier: MIT
  */
-#include <jni.h>
 #include <android/log.h>
+#include <jni.h>
 
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -25,7 +25,7 @@
 #include "rvm.h"
 #include "vm/vm.h"
 
-#define LOG_TAG "rvm"
+#define LOG_TAG   "rvm"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
@@ -35,7 +35,7 @@
 
 /* ------------------------------------------------------------ input ring */
 
-#define RING_CAP 8192 /* must be a power of two */
+#define RING_CAP  8192 /* must be a power of two */
 #define RING_MASK (RING_CAP - 1)
 
 typedef struct {
@@ -46,35 +46,37 @@ typedef struct {
     _Alignas(64) atomic_size_t tail; /* next byte the UI will write  */
 } input_ring;
 
-static void ring_init(input_ring *r)
-{
+static void ring_init(input_ring *r) {
     atomic_store_explicit(&r->head, 0, memory_order_relaxed);
     atomic_store_explicit(&r->tail, 0, memory_order_relaxed);
 }
 
 /* Returns how many bytes were queued; drops the rest rather than blocking the
  * UI thread on a guest that is not reading. */
-static size_t ring_push(input_ring *r, const u8 *src, size_t n)
-{
+static size_t ring_push(input_ring *r, const u8 *src, size_t n) {
     size_t tail = atomic_load_explicit(&r->tail, memory_order_relaxed);
     size_t head = atomic_load_explicit(&r->head, memory_order_acquire);
     size_t free_ = RING_CAP - (tail - head);
-    if (n > free_) n = free_;
-    for (size_t i = 0; i < n; i++) r->buf[(tail + i) & RING_MASK] = src[i];
+    if (n > free_)
+        n = free_;
+    for (size_t i = 0; i < n; i++)
+        r->buf[(tail + i) & RING_MASK] = src[i];
     atomic_store_explicit(&r->tail, tail + n, memory_order_release);
     return n;
 }
 
 /* vm_poll_fn: called by the VM when the guest's serial FIFO has room. */
-static int ring_poll(void *ud, u8 *dst, size_t max)
-{
+static int ring_poll(void *ud, u8 *dst, size_t max) {
     input_ring *r = (input_ring *)ud;
     size_t head = atomic_load_explicit(&r->head, memory_order_relaxed);
     size_t tail = atomic_load_explicit(&r->tail, memory_order_acquire);
     size_t avail = tail - head;
-    if (avail == 0) return 0;
-    if (avail > max) avail = max;
-    for (size_t i = 0; i < avail; i++) dst[i] = r->buf[(head + i) & RING_MASK];
+    if (avail == 0)
+        return 0;
+    if (avail > max)
+        avail = max;
+    for (size_t i = 0; i < avail; i++)
+        dst[i] = r->buf[(head + i) & RING_MASK];
     atomic_store_explicit(&r->head, head + avail, memory_order_release);
     return (int)avail;
 }
@@ -84,8 +86,7 @@ static int ring_poll(void *ud, u8 *dst, size_t max)
  * Without this the logs go to stderr, which on Android is /dev/null, and a
  * boot that goes wrong says nothing at all.
  */
-static void jni_log(void *ud, rvm_loglevel lvl, const char *line)
-{
+static void jni_log(void *ud, rvm_loglevel lvl, const char *line) {
     session *s = ud;
     JNIEnv *env = NULL;
     if (s->onLog == NULL)
@@ -108,9 +109,9 @@ typedef struct {
     input_ring ring;
 
     JavaVM *jvm;
-    jclass cls;      /* global ref to dev.rvm.app.RvmNative */
+    jclass cls; /* global ref to dev.rvm.app.RvmNative */
     jmethodID onOutput;
-    jmethodID onLog;   /* NULL when the app did not ask for a debug log */
+    jmethodID onLog; /* NULL when the app did not ask for a debug log */
 
     /* Reused across calls so a chatty guest does not allocate per line. */
     jbyteArray scratch;
@@ -119,10 +120,10 @@ typedef struct {
 } session;
 
 /* vm_write_fn: called on the VM thread with one line-buffered chunk. */
-static void jni_write(void *ud, const u8 *buf, size_t n)
-{
+static void jni_write(void *ud, const u8 *buf, size_t n) {
     session *s = (session *)ud;
-    if (n == 0 || s->cls == NULL) return;
+    if (n == 0 || s->cls == NULL)
+        return;
 
     JNIEnv *env = NULL;
     if ((*s->jvm)->GetEnv(s->jvm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
@@ -131,13 +132,16 @@ static void jni_write(void *ud, const u8 *buf, size_t n)
     }
 
     if (s->scratch == NULL || s->scratch_len < n) {
-        if (s->scratch != NULL) (*env)->DeleteGlobalRef(env, s->scratch);
+        if (s->scratch != NULL)
+            (*env)->DeleteGlobalRef(env, s->scratch);
         size_t cap = n < 4096 ? 4096 : n;
         jbyteArray local = (*env)->NewByteArray(env, (jsize)cap);
-        if (local == NULL) return; /* out of memory: drop the output */
+        if (local == NULL)
+            return; /* out of memory: drop the output */
         s->scratch = (jbyteArray)(*env)->NewGlobalRef(env, local);
         (*env)->DeleteLocalRef(env, local);
-        if (s->scratch == NULL) return;
+        if (s->scratch == NULL)
+            return;
         s->scratch_len = cap;
     }
 
@@ -151,44 +155,48 @@ static void jni_write(void *ud, const u8 *buf, size_t n)
 
 /* --------------------------------------------------------------- helpers */
 
-static char *dup_string(JNIEnv *env, jstring js)
-{
-    if (js == NULL) return NULL;
+static char *dup_string(JNIEnv *env, jstring js) {
+    if (js == NULL)
+        return NULL;
     const char *c = (*env)->GetStringUTFChars(env, js, NULL);
-    if (c == NULL) return NULL;
+    if (c == NULL)
+        return NULL;
     char *out = strdup(c);
     (*env)->ReleaseStringUTFChars(env, js, c);
     return out;
 }
 
-static void notify_exit(session *s, int code)
-{
+static void notify_exit(session *s, int code) {
     JNIEnv *env = NULL;
-    if (s->cls == NULL) return;
-    if ((*s->jvm)->GetEnv(s->jvm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) return;
+    if (s->cls == NULL)
+        return;
+    if ((*s->jvm)->GetEnv(s->jvm, (void **)&env, JNI_VERSION_1_6) != JNI_OK)
+        return;
     jmethodID m = (*env)->GetStaticMethodID(env, s->cls, "onVmExit", "(I)V");
-    if (m != NULL) (*env)->CallStaticVoidMethod(env, s->cls, m, (jint)code);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    if (m != NULL)
+        (*env)->CallStaticVoidMethod(env, s->cls, m, (jint)code);
+    if ((*env)->ExceptionCheck(env))
+        (*env)->ExceptionClear(env);
 }
 
 /* ------------------------------------------------------------------- JNI */
 
 static JavaVM *g_jvm;
 
-JNI_EXPORT jint JNI_OnLoad(JavaVM *jvm, void *reserved)
-{
+JNI_EXPORT jint JNI_OnLoad(JavaVM *jvm, void *reserved) {
     (void)reserved;
     g_jvm = jvm;
     LOGI("librvm_jni loaded");
     return JNI_VERSION_1_6;
 }
 
-JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmCreate(
-    JNIEnv *env, jclass cls, jstring kernel, jstring disk, jstring initrd, jint ramMib,
-    jstring bootargs, jboolean trace)
-{
+JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmCreate(JNIEnv *env, jclass cls,
+                                                             jstring kernel, jstring disk,
+                                                             jstring initrd, jint ramMib,
+                                                             jstring bootargs, jboolean trace) {
     session *s = calloc(1, sizeof *s);
-    if (s == NULL) return 0;
+    if (s == NULL)
+        return 0;
 
     ring_init(&s->ring);
     s->jvm = g_jvm;
@@ -246,7 +254,10 @@ JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmCreate(
     rvm_err e = vm_new(&s->vm, &o);
     if (e != RVM_OK) {
         LOGE("vm_new failed: %d", (int)e);
-        free(k); free(d); free(i); free(b);
+        free(k);
+        free(d);
+        free(i);
+        free(b);
         (*env)->DeleteGlobalRef(env, s->cls);
         free(s);
         return 0;
@@ -270,37 +281,41 @@ JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmCreate(
     return (jlong)(intptr_t)s;
 }
 
-JNI_EXPORT jint JNICALL Java_dev_rvm_app_RvmNative_vmRun(JNIEnv *env, jclass cls, jlong handle)
-{
-    (void)env; (void)cls;
+JNI_EXPORT jint JNICALL Java_dev_rvm_app_RvmNative_vmRun(JNIEnv *env, jclass cls, jlong handle) {
+    (void)env;
+    (void)cls;
     session *s = (session *)(intptr_t)handle;
-    if (s == NULL) return -1;
+    if (s == NULL)
+        return -1;
     rvm_err e = vm_run(&s->vm);
     int code = (e == RVM_OK) ? (int)s->vm.exit_code : -(int)e;
     notify_exit(s, code);
     return code;
 }
 
-JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmStop(JNIEnv *env, jclass cls, jlong handle)
-{
-    (void)env; (void)cls;
+JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmStop(JNIEnv *env, jclass cls, jlong handle) {
+    (void)env;
+    (void)cls;
     session *s = (session *)(intptr_t)handle;
-    if (s == NULL) return;
+    if (s == NULL)
+        return;
     vm_stop(&s->vm, 0); /* flips the atomic vm.running flag the loop polls */
 }
 
-JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmFree(JNIEnv *env, jclass cls, jlong handle)
-{
+JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmFree(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
     session *s = (session *)(intptr_t)handle;
-    if (s == NULL) return;
+    if (s == NULL)
+        return;
     vm_free(&s->vm);
     free((void *)s->vm.opts.kernel_path);
     free((void *)s->vm.opts.disk_path);
     free((void *)s->vm.opts.initrd_path);
     free((void *)s->vm.opts.bootargs);
-    if (s->scratch != NULL) (*env)->DeleteGlobalRef(env, s->scratch);
-    if (s->cls != NULL) (*env)->DeleteGlobalRef(env, s->cls);
+    if (s->scratch != NULL)
+        (*env)->DeleteGlobalRef(env, s->scratch);
+    if (s->cls != NULL)
+        (*env)->DeleteGlobalRef(env, s->cls);
     /* The log sink is process-global and the app runs one VM at a time, so
      * dropping it here is what keeps it from calling into a freed session. */
     rvm_log_set_sink(NULL, NULL);
@@ -308,36 +323,41 @@ JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmFree(JNIEnv *env, jclass cl
 }
 
 JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmInput(JNIEnv *env, jclass cls, jlong handle,
-                                                           jbyteArray data, jint len)
-{
+                                                           jbyteArray data, jint len) {
     (void)cls;
     session *s = (session *)(intptr_t)handle;
-    if (s == NULL || data == NULL || len <= 0) return;
+    if (s == NULL || data == NULL || len <= 0)
+        return;
     jbyte tmp[256];
     jbyte *p = tmp;
     if ((size_t)len > sizeof tmp) {
         p = (jbyte *)malloc((size_t)len);
-        if (p == NULL) return;
+        if (p == NULL)
+            return;
     }
     (*env)->GetByteArrayRegion(env, data, 0, len, p);
-    if (!(*env)->ExceptionCheck(env)) ring_push(&s->ring, (const u8 *)p, (size_t)len);
-    else (*env)->ExceptionClear(env);
-    if (p != tmp) free(p);
+    if (!(*env)->ExceptionCheck(env))
+        ring_push(&s->ring, (const u8 *)p, (size_t)len);
+    else
+        (*env)->ExceptionClear(env);
+    if (p != tmp)
+        free(p);
 }
 
 JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmInterrupt(JNIEnv *env, jclass cls,
-                                                               jlong handle)
-{
-    (void)env; (void)cls;
+                                                               jlong handle) {
+    (void)env;
+    (void)cls;
     session *s = (session *)(intptr_t)handle;
-    if (s == NULL) return;
+    if (s == NULL)
+        return;
     const u8 etx = 3; /* Ctrl-C */
     ring_push(&s->ring, &etx, 1);
 }
 
-JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmInsns(JNIEnv *env, jclass cls, jlong handle)
-{
-    (void)env; (void)cls;
+JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmInsns(JNIEnv *env, jclass cls, jlong handle) {
+    (void)env;
+    (void)cls;
     session *s = (session *)(intptr_t)handle;
     return (s == NULL) ? 0 : (jlong)s->vm.insns;
 }
