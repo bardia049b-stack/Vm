@@ -222,8 +222,6 @@ rvm_err vm_load(vm *v) {
         LOG_ERROR("vm: %s is not an ELF, a PE Image or readable at all", o->kernel_path);
         return RVM_ERR_BADARG;
     }
-    if (o->entry_override)
-        entry = o->entry_override;
     v->entry = entry;
 
     /* ---- device tree ---- */
