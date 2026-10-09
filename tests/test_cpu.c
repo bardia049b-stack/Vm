@@ -349,10 +349,15 @@ void test_cpu_word_ops(void) {
         t.cpu.x[X_T1] = 0x0000000F00000003ULL; /* shift amount is 3 */
         th_run_all(&t);
         const u32 w = 0x80000000u;
-        CHECK_U64(t.cpu.x[X_A0], (u64)(s64)(s32)(w << 4));
+        /* The W shifts keep the low 32 bits.  Written as a masked 64-bit
+         * shift rather than `w << 4` because gcc's constant folder pushes the
+         * (s32) cast inside and then warns about shifting a negative value. */
+        const u32 sll4 = (u32)(((u64)w << 4) & 0xFFFFFFFFu);
+        const u32 sll3 = (u32)(((u64)w << 3) & 0xFFFFFFFFu);
+        CHECK_U64(t.cpu.x[X_A0], (u64)(s64)(s32)sll4);
         CHECK_U64(t.cpu.x[X_A1], (u64)(s64)(s32)(w >> 4));
         CHECK_U64(t.cpu.x[X_A2], (u64)(s64)(s32)((s32)w >> 4));
-        CHECK_U64(t.cpu.x[X_A3], (u64)(s64)(s32)(w << 3));
+        CHECK_U64(t.cpu.x[X_A3], (u64)(s64)(s32)sll3);
         CHECK_U64(t.cpu.x[X_A4], (u64)(s64)(s32)(w >> 3));
         CHECK_U64(t.cpu.x[X_A5], (u64)(s64)(s32)((s32)w >> 3));
         CHECK_U64(t.cpu.x[X_A7], (u64)(s64)(s32)((s32)w + 3));
@@ -1204,4 +1209,69 @@ void test_cpu_fp(void) {
         CHECK_U64(ms & MSTATUS_SD, MSTATUS_SD);
         th_free(&t);
     }
+}
+
+/* --------------------------------------------------------------- trace */
+
+static int g_trace_calls;
+static u64 g_trace_first_pc;
+
+static void trace_count(void *ud, u64 pc, u32 insn, u32 len) {
+    RVM_UNUSED(ud);
+    RVM_UNUSED(insn);
+    RVM_UNUSED(len);
+    if (g_trace_calls == 0)
+        g_trace_first_pc = pc;
+    g_trace_calls++;
+}
+
+void test_cpu_trace_gate(void) {
+    QUIET_BEGIN();
+
+    /* The gate is a small state machine; check it before wiring it up. */
+    rvm_trace_from(0x80001000);
+    CHECK(!rvm_trace_armed(0x80000FFC));
+    CHECK(rvm_trace_armed(0x80001000));
+    CHECK(rvm_trace_armed(0x80000000)); /* it stays open once armed */
+    rvm_trace_from(0);
+    CHECK(rvm_trace_armed(0xDEADBEEFULL)); /* 0 means no gate at all */
+
+    th t;
+    CHECK(th_init(&t) == RVM_OK);
+    u64 a0 = th_emit(&t, ADDI(X_A0, X_ZERO, 1));
+    u64 a1 = th_emit(&t, ADDI(X_A1, X_ZERO, 2));
+    th_emit(&t, ADDI(X_A2, X_ZERO, 3));
+
+    rvm_trace_set(trace_count, NULL);
+
+    /* Ungated: the hook fires before every one of the three instructions. */
+    g_trace_calls = 0;
+    g_trace_first_pc = 0;
+    rvm_trace_from(0);
+    t.cpu.pc = a0;
+    th_run_all(&t);
+    CHECK_U64(g_trace_calls, 3);
+    CHECK_U64(g_trace_first_pc, a0);
+    CHECK_U64(t.cpu.x[X_A2], 3); /* gating must not change execution */
+
+    /* Gated on the second instruction: the first one is never reported. */
+    g_trace_calls = 0;
+    g_trace_first_pc = 0;
+    rvm_trace_from(a1);
+    t.cpu.pc = a0;
+    th_run_all(&t);
+    CHECK_U64(g_trace_calls, 2);
+    CHECK_U64(g_trace_first_pc, a1);
+
+    /* A gate that is never reached reports nothing at all. */
+    g_trace_calls = 0;
+    rvm_trace_from(0x80FFFFFFULL);
+    t.cpu.pc = a0;
+    th_run_all(&t);
+    CHECK_U64(g_trace_calls, 0);
+
+    rvm_trace_set(NULL, NULL);
+    rvm_trace_from(0);
+    th_free(&t);
+    QUIET_END();
 }

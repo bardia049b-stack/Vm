@@ -883,7 +883,7 @@ step_result cpu_step(cpu *c) {
 
     void *ud = NULL;
     rvm_trace_fn tf = rvm_trace_get(&ud);
-    if (tf)
+    if (tf && rvm_trace_armed(c->pc))
         tf(ud, c->pc, insn, len);
 
     if (len == 2) {

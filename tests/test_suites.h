@@ -25,6 +25,7 @@ void test_cpu_csr(void);
 void test_cpu_trap_mret(void);
 void test_cpu_fp(void);
 void test_cpu_illegal(void);
+void test_cpu_trace_gate(void);
 void test_mmu_bare(void);
 void test_mmu_sv39(void);
 void test_mmu_sv48(void);

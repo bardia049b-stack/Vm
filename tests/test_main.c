@@ -79,6 +79,7 @@ int main(int argc, char **argv) {
     RUN(test_cpu_trap_mret);
     RUN(test_cpu_fp);
     RUN(test_cpu_illegal);
+    RUN(test_cpu_trace_gate);
 
     printf("[mmu]\n");
     RUN(test_mmu_bare);

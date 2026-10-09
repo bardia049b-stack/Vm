@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <getopt.h>
+#include <stdlib.h>
 
 #define RVM_VERSION "0.1.0"
 
@@ -36,6 +37,8 @@ static void usage(const char *prog) {
            "  -n, --insns N        stop after N instructions (0 = unlimited)\n"
            "      --stats          print counters on exit\n"
            "      --trace          log every retired instruction\n"
+           "      --trace-from HEX log from that guest PC on (implies --trace);\n"
+           "                       also read from RVM_TRACE_FROM\n"
            "  -v, --verbose        debug logging\n"
            "  -q, --quiet          only warnings and errors\n"
            "      --version        print the version and exit\n"
@@ -58,6 +61,23 @@ static u64 parse_u64(const char *s, bool *ok) {
 int main(int argc, char **argv) {
     vm_opts o;
     vm_opts_default(&o);
+
+    /* RVM_TRACE_FROM=0x80200000 rvm -k vmlinux --trace is the documented way
+     * to catch a guest that jumps into data without producing a multi-gigabyte
+     * log.  An explicit --trace-from on the command line still wins. */
+    {
+        const char *env = getenv("RVM_TRACE_FROM");
+        bool ok = false;
+        if (env && *env) {
+            o.trace_from = parse_u64(env, &ok);
+            if (!ok) {
+                fprintf(stderr, "rvm: bad RVM_TRACE_FROM: %s\n", env);
+                return 2;
+            }
+            o.trace = true;
+            o.log_level = RVM_LOG_TRACE;
+        }
+    }
 
     char dump_dtb_path[1024] = {0};
     bool want_stats = false;
@@ -85,6 +105,7 @@ int main(int argc, char **argv) {
                                     {"dump-dtb", required_argument, 0, 1006},
                                     {"isa", required_argument, 0, 1007},
                                     {"mmu-type", required_argument, 0, 1008},
+                                    {"trace-from", required_argument, 0, 1009},
                                     {0, 0, 0, 0}};
 
     int c;
@@ -129,6 +150,17 @@ int main(int argc, char **argv) {
         case 1001:
             want_stats = true;
             break;
+        case 1009: {
+            bool tf_ok = false;
+            o.trace_from = parse_u64(optarg, &tf_ok);
+            if (!tf_ok) {
+                fprintf(stderr, "rvm: bad --trace-from: %s\n", optarg);
+                return 2;
+            }
+            o.trace = true;
+            o.log_level = RVM_LOG_TRACE;
+            break;
+        }
         case 1002:
             o.trace = true;
             o.log_level = RVM_LOG_TRACE;

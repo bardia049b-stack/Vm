@@ -130,6 +130,15 @@ typedef void (*rvm_trace_fn)(void *ud, u64 pc, u32 insn, u32 insn_len);
 void rvm_trace_set(rvm_trace_fn fn, void *ud);
 rvm_trace_fn rvm_trace_get(void **ud);
 
+/*
+ * Trace gate.  A full boot trace is gigabytes, so rvm_trace_from() names one
+ * guest PC and nothing is emitted until the CPU retires an instruction there;
+ * from that point the trace runs to the end.  Passing 0 disables the gate.
+ * rvm_trace_armed() is what the CPU asks before calling the hook.
+ */
+void rvm_trace_from(u64 pc);
+bool rvm_trace_armed(u64 pc);
+
 /* ------------------------------------------------------------ time base */
 
 /* Wall-clock nanoseconds since an arbitrary epoch; used to drive mtime. */

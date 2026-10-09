@@ -32,6 +32,8 @@ const char *rvm_strerror(rvm_err e) {
 static rvm_loglevel g_level = RVM_LOG_INFO;
 static rvm_trace_fn g_trace_fn;
 static void *g_trace_ud;
+static u64 g_trace_from;
+static bool g_trace_armed;
 
 void rvm_log_set_level(rvm_loglevel lvl) {
     g_level = lvl;
@@ -84,6 +86,21 @@ rvm_trace_fn rvm_trace_get(void **ud) {
     if (ud)
         *ud = g_trace_ud;
     return g_trace_fn;
+}
+
+void rvm_trace_from(u64 pc) {
+    g_trace_from = pc;
+    g_trace_armed = (pc == 0); /* no gate: emit from the first instruction */
+}
+
+bool rvm_trace_armed(u64 pc) {
+    if (g_trace_armed)
+        return true;
+    if (g_trace_from != 0 && pc == g_trace_from) {
+        g_trace_armed = true;
+        return true;
+    }
+    return false;
 }
 
 /* -------------------------------------------------------------------- time */

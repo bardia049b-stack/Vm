@@ -45,6 +45,7 @@ typedef struct vm_opts {
 
     u64 max_insns; /* 0 -> run forever */
     bool trace;
+    u64 trace_from; /* guest PC that opens the trace gate; 0 = trace everything */
     rvm_loglevel log_level;
 
     vm_write_fn write;

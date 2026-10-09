@@ -45,7 +45,9 @@ jobs:
       - name: Build and run
         run: |
           mkdir -p "$CCACHE_DIR"
-          ./scripts/test.sh -v -j"$(nproc)"
+          # -Werror on the optimised build: `make lint` is -fsyntax-only and so
+          # misses warnings that only appear once gcc folds constants at -O2.
+          ./scripts/test.sh -v --werror -j"$(nproc)"
           ccache --show-stats
 
       - name: Re-run verbosely for the log

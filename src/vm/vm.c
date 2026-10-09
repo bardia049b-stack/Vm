@@ -154,8 +154,10 @@ rvm_err vm_new(vm *v, const vm_opts *o) {
     v->sbi.set_timer = sbi_set_timer_cb;
     v->sbi.set_timer_ud = v;
 
-    if (o->trace)
+    if (o->trace) {
+        rvm_trace_from(o->trace_from);
         rvm_trace_set(trace_hook, v);
+    }
     v->running = true;
     return RVM_OK;
 
