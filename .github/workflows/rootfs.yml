@@ -1,13 +1,14 @@
 name: rootfs
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to publish (must already exist)'
+        description: 'Release tag'
         required: true
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -18,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: install tools
+      - name: install debootstrap
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -26,17 +27,32 @@ jobs:
 
       - name: build rootfs
         run: |
+          set -e
           sudo mkdir -p /srv/rootfs
           sudo debootstrap --arch=riscv64 --foreign --variant=minbase \
             trixie /srv/rootfs http://deb.debian.org/debian
           sudo cp /usr/bin/qemu-riscv64-static /srv/rootfs/usr/bin/
           sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static \
             /bin/sh /debootstrap/debootstrap --second-stage
-          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static \
-            /bin/bash -c "echo 'root:root' | chpasswd; echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> /etc/inittab"
+
+      - name: configure init + getty + login
+        run: |
+          set -e
+          sudo cp /etc/resolv.conf /srv/rootfs/etc/resolv.conf
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -c "
+            apt-get update
+            apt-get install -y --no-install-recommends sysvinit-core
+            echo 'root:root' | chpasswd
+            echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> /etc/inittab
+            echo 'rvm' > /etc/hostname
+            echo '/dev/vda / ext4 defaults 0 1' > /etc/fstab
+            echo 'proc /proc proc defaults 0 0' >> /etc/fstab
+            echo 'sysfs /sys sysfs defaults 0 0' >> /etc/fstab
+          "
 
       - name: build disk.img
         run: |
+          set -e
           sudo dd if=/dev/zero of=/srv/disk.img bs=1M count=2048
           sudo mkfs.ext4 -F -L rootfs /srv/disk.img
           sudo mkdir -p /mnt/rootfs
