@@ -81,6 +81,23 @@ static int ring_poll(void *ud, u8 *dst, size_t max) {
     return (int)avail;
 }
 
+/* --------------------------------------------------------------- session */
+
+typedef struct {
+    vm vm;
+    input_ring ring;
+
+    JavaVM *jvm;
+    jclass cls; /* global ref to dev.rvm.app.RvmNative */
+    jmethodID onOutput;
+    jmethodID onLog; /* NULL when the app did not ask for a debug log */
+
+    /* Reused across calls so a chatty guest does not allocate per line. */
+    jbyteArray scratch;
+    size_t scratch_len;
+
+} session;
+
 /*
  * rvm_log_fn: one line of RVM's own log to RvmNative.onLog(int, String).
  * Without this the logs go to stderr, which on Android is /dev/null, and a
@@ -101,23 +118,6 @@ static void jni_log(void *ud, rvm_loglevel lvl, const char *line) {
     (*env)->CallStaticVoidMethod(env, s->cls, s->onLog, (jint)lvl, js);
     (*env)->DeleteLocalRef(env, js);
 }
-
-/* --------------------------------------------------------------- session */
-
-typedef struct {
-    vm vm;
-    input_ring ring;
-
-    JavaVM *jvm;
-    jclass cls; /* global ref to dev.rvm.app.RvmNative */
-    jmethodID onOutput;
-    jmethodID onLog; /* NULL when the app did not ask for a debug log */
-
-    /* Reused across calls so a chatty guest does not allocate per line. */
-    jbyteArray scratch;
-    size_t scratch_len;
-
-} session;
 
 /* vm_write_fn: called on the VM thread with one line-buffered chunk. */
 static void jni_write(void *ud, const u8 *buf, size_t n) {
