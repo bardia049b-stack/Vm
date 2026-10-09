@@ -19,7 +19,8 @@
 void vm_opts_default(vm_opts *o) {
     memset(o, 0, sizeof(*o));
     o->ram_size = RVM_RAM_DEFAULT;
-    o->bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw init=/bin/sh";
+    o->bootargs =
+        "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw init=/bin/sh";
     o->isa = "rv64imafdc";
     o->mmu_type = "riscv,sv57";
     o->dtb_addr = RVM_DTB_DEFAULT_ADDR;
