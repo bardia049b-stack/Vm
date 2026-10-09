@@ -10,7 +10,6 @@ RV64IMAFDC · Sv39/48/57 · virtio · SBI v2.0 · C11, libc and libm only
 ![Makefile](https://img.shields.io/badge/Makefile-000000?style=flat-square&logo=gnu&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-000000?style=flat-square&logo=cmake&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-000000?style=flat-square&logo=linux&logoColor=white)
-![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)
 ![Android](https://img.shields.io/badge/Android-000000?style=flat-square&logo=android&logoColor=white)
 ![Debian](https://img.shields.io/badge/Debian-000000?style=flat-square&logo=debian&logoColor=white)
 ![RISC-V](https://img.shields.io/badge/RISC--V-000000?style=flat-square&logo=riscv&logoColor=white)
