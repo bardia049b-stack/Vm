@@ -238,7 +238,7 @@ public final class MainActivity extends Activity {
         }, 8000);
         final String k = kernel.getAbsolutePath();
         final String d = disk.exists() ? disk.getAbsolutePath() : null;
-        final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw";
+        final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw init=/bin/sh";
 
         vmThread = new Thread(new Runnable() {
             @Override public void run() {

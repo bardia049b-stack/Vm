@@ -92,3 +92,8 @@ Licensing
 ---------
 
 MIT. See LICENSE.
+
+## Boot shell
+Default cmdline uses init=/bin/sh so a serial shell appears even when the
+rootfs has no getty on ttyS0. Replace with a normal init once inittab is set.
+

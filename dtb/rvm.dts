@@ -24,7 +24,7 @@
 
 	/* Passed to the kernel as-is; tools/run.sh overrides it with -a. */
 	chosen {
-		bootargs = "console=ttyS0 earlycon=sbi root=/dev/vda rw rootwait";
+		bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw init=/bin/sh";
 		stdout-path = "/soc/serial@10000000";
 	};
 
