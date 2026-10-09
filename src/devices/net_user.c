@@ -1,8 +1,4 @@
-#ifndef SOCK_NONBLOCK
-#define SOCK_NONBLOCK 0
-#endif
 /*
-#include <stdlib.h>
  * net_user.c -- userspace NAT for virtio-net (works without TAP / on Android).
  *
  * Guest: 10.0.2.15/24  GW: 10.0.2.2  DNS: 10.0.2.3
@@ -10,6 +6,8 @@
  * SPDX-License-Identifier: MIT
  */
 #include "net_user.h"
+
+#include <stdlib.h>
 
 #include <arpa/inet.h>
 #include <errno.h>
