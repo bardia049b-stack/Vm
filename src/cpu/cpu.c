@@ -104,21 +104,18 @@ bool cpu_mem_load(cpu *c, u64 va, u32 size, u64 *out, u32 *cause) {
         return false;
     }
 
-    /* straddling: assemble from per-page halves */
+    /* straddling or awkwardly sized: assemble byte by byte */
     u64 v = 0;
-    u32 done = 0;
-    while (done < size) {
-        u32 chunk = (u32)RVM_MIN((u64)(size - done), 4096 - ((pa + done) & 4095));
+    for (u32 i = 0; i < size; i++) {
         u64 p;
-        if (!translate(c, va + done, ACC_LOAD, &p, cause))
+        if (!translate(c, va + i, ACC_LOAD, &p, cause))
             return false;
         u64 part = 0;
-        if (!bus_load(c->bus, p, chunk, &part)) {
+        if (!bus_load(c->bus, p, 1, &part)) {
             *cause = EXC_LOAD_FAULT;
             return false;
         }
-        v |= part << (8 * done);
-        done += chunk;
+        v |= part << (8 * i);
     }
     *out = v;
     return true;
@@ -128,6 +125,9 @@ bool cpu_mem_store(cpu *c, u64 va, u32 size, u64 val, u32 *cause) {
     u64 pa;
     if (!translate(c, va, ACC_STORE, &pa, cause))
         return false;
+    /* Any store to the reserved address clears the LR reservation. */
+    if (c->rsrv_valid && pa <= c->rsrv_addr && c->rsrv_addr < pa + size)
+        c->rsrv_valid = false;
     if ((pa & 4095) + size <= 4096) {
         if (bus_store(c->bus, pa, size, val))
             return true;
@@ -135,17 +135,14 @@ bool cpu_mem_store(cpu *c, u64 va, u32 size, u64 val, u32 *cause) {
         return false;
     }
 
-    u32 done = 0;
-    while (done < size) {
-        u32 chunk = (u32)RVM_MIN((u64)(size - done), 4096 - ((pa + done) & 4095));
+    for (u32 i = 0; i < size; i++) {
         u64 p;
-        if (!translate(c, va + done, ACC_STORE, &p, cause))
+        if (!translate(c, va + i, ACC_STORE, &p, cause))
             return false;
-        if (!bus_store(c->bus, p, chunk, (val >> (8 * done)))) {
+        if (!bus_store(c->bus, p, 1, (val >> (8 * i)) & 0xff)) {
             *cause = EXC_STORE_FAULT;
             return false;
         }
-        done += chunk;
     }
     return true;
 }

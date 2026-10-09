@@ -19,7 +19,7 @@
 void vm_opts_default(vm_opts *o) {
     memset(o, 0, sizeof(*o));
     o->ram_size = RVM_RAM_DEFAULT;
-    o->bootargs = "console=ttyS0 earlycon=sbi root=/dev/vda rootwait rw";
+    o->bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw";
     o->isa = "rv64imafdc";
     o->mmu_type = "riscv,sv57";
     o->dtb_addr = RVM_DTB_DEFAULT_ADDR;
@@ -372,9 +372,13 @@ rvm_err vm_run(vm *v) {
             if (!is_irq && (cause & 0x3F) == EXC_ECALL_S && v->cpu.last_from_priv == PRV_S) {
                 if (!sbi_handle(&v->sbi, &v->cpu))
                     goto done;
+                /* ecall is always 4 bytes; advance MEPC so mret resumes after it. */
+                v->cpu.csr[CSR_MEPC] += 4;
                 cpu_mret(&v->cpu);
             } else if (is_irq && v->cpu.priv == PRV_M) {
-                /* A non-delegated interrupt: acknowledge it and return. */
+                /* Non-delegated M interrupt. Convert MTIP into STIP for S-mode. */
+                if ((cause & 0x3F) == 7)
+                    v->cpu.csr[CSR_MIP] |= MIP_STIP;
                 cpu_mret(&v->cpu);
             }
             break;

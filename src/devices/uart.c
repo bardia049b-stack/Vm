@@ -70,11 +70,13 @@ static u8 uart_pop(uart *u) {
 
 bool uart_load(void *dev, u64 off, u32 size, u64 *out) {
     uart *u = (uart *)dev;
-    if (size != 1)
-        return false; /* 8250 registers are byte wide */
+    /* Byte-mapped (stride 1) or mmio32 (stride 4). Accept 1..4. */
+    if (size < 1 || size > 4)
+        return false;
     *out = 0;
 
-    switch (off & 7) {
+    u32 reg = (size >= 4) ? ((u32)off >> 2) & 7 : ((u32)off & 7);
+    switch (reg) {
     case UART_RBR:
         *out = dlab(u) ? u->dll : uart_pop(u);
         break;
@@ -105,11 +107,12 @@ bool uart_load(void *dev, u64 off, u32 size, u64 *out) {
 
 bool uart_store(void *dev, u64 off, u32 size, u64 val) {
     uart *u = (uart *)dev;
-    if (size != 1)
+    if (size < 1 || size > 4)
         return false;
     u8 v = (u8)val;
 
-    switch (off & 7) {
+    u32 reg = (size >= 4) ? ((u32)off >> 2) & 7 : ((u32)off & 7);
+    switch (reg) {
     case UART_THR:
         if (dlab(u)) {
             u->dll = v;

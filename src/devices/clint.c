@@ -27,8 +27,10 @@ u64 clint_tick(clint *c) {
     for (u32 i = 0; i < CLINT_NUM_HARTS; i++) {
         if (c->msip[i] & 1)
             bits |= MIP_MSIP;
-        if (c->mtime >= c->mtimecmp[i])
-            bits |= MIP_MTIP;
+        if (c->mtime >= c->mtimecmp[i]) {
+            /* S-mode guest sees STIP (firmware duty). MTIP kept for completeness. */
+            bits |= MIP_STIP | MIP_MTIP;
+        }
     }
     return bits;
 }

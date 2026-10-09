@@ -130,7 +130,7 @@ static inline u32 off_clwsp(u16 c) {
     return (((c >> 12) & 1) << 5) | (((c >> 4) & 7) << 2) | (((c >> 2) & 3) << 6);
 }
 static inline u32 off_cldsp(u16 c) {
-    return (((c >> 12) & 1) << 5) | (((c >> 5) & 2) << 3) | (((c >> 2) & 7) << 6);
+    return (((c >> 12) & 1) << 5) | (((c >> 5) & 3) << 3) | (((c >> 2) & 7) << 6);
 }
 static inline u32 off_cswsp(u16 c) {
     return (((c >> 9) & 0xF) << 2) | (((c >> 7) & 3) << 6);
