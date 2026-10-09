@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+
+  One vertical LinearLayout, no ConstraintLayout, no ScrollView nesting, no
+  weights beyond the single one that gives the console the spare space.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paper">
+
+    <!-- Toolbar: four plain buttons, no icons, no elevation. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@color/paper_dark"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp">
+
+        <Button android:id="@+id/btn_boot"
+            style="@style/RvmButton"
+            android:text="@string/boot" />
+        <Button android:id="@+id/btn_stop"
+            style="@style/RvmButton"
+            android:text="@string/stop" />
+        <Button android:id="@+id/btn_kernel"
+            style="@style/RvmButton"
+            android:text="@string/kernel" />
+        <Button android:id="@+id/btn_disk"
+            style="@style/RvmButton"
+            android:text="@string/disk" />
+    </LinearLayout>
+
+    <!-- The guest framebuffer.  GONE until virtio-gpu produces a scanout, so
+         the console owns the whole screen until something needs the pixels. -->
+    <dev.rvm.app.GfxView
+        android:id="@+id/gfx"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone" />
+
+    <!-- The serial console. -->
+    <dev.rvm.app.RvmView
+        android:id="@+id/console"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="4dp" />
+
+    <!-- Status line: one line, no marquee, no animation. -->
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/paper_dark"
+        android:textColor="@color/ink"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:text="@string/idle" />
+
+    <!-- Helper keys. -->
+    <dev.rvm.app.KeyBar
+        android:id="@+id/keys"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+</LinearLayout>

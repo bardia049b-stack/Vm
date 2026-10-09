@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+
+  No AndroidX, no Material, no Compose: this manifest references only framework
+  classes.  The theme is a plain DeviceDefault one so the app does not have to
+  drag in appcompat-resources (which alone is ~1.5 MB of the APK).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The guest disk image is big; do not let the installer put us on a
+         small internal partition. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- A keyboard and a touchscreen are both optional: RVM drives everything
+         through the on-screen helper keys. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.audio.output" android:required="false" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/RvmTheme"
+        android:allowBackup="false"
+        android:extractNativeLibs="false"
+        android:hardwareAccelerated="true"
+        android:supportsRtl="false"
+        android:largeHeap="false"
+        android:resizeableActivity="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:screenOrientation="fullSensor">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Let a user open a vmlinux straight from a file manager. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:scheme="content" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

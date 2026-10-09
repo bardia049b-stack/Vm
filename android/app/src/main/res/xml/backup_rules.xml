@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  The guest disk image can be gigabytes and is trivially reproducible with
+  tools/mkrootfs.sh, so nothing in the app's private directory is worth
+  backing up.
+-->
+<full-backup-content>
+    <exclude domain="file" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

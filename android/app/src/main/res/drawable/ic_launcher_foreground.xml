@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  The launcher icon is a terminal prompt: a chevron and an underscore inside a
+  rounded square.  Pure line art so it survives being scaled to any density
+  without shipping a single PNG.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- 72dp safe zone centred in the 108dp canvas. -->
+    <path android:strokeColor="@color/ink" android:strokeWidth="6"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M34,40 L48,54 L34,68" />
+    <path android:strokeColor="@color/ink" android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M56,70 L76,70" />
+</vector>

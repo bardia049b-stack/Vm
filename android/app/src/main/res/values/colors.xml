@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  Two soft colours and one border, nothing else.  No gradients, no shadows, no
+  per-state colour ramps: the palette is deliberately small so the UI reads as
+  calm rather than as a themed widget library.
+-->
+<resources>
+    <color name="paper">#F5F4F0</color>
+    <color name="paper_dark">#EDEBE6</color>
+    <color name="ink">#2B2B28</color>
+    <color name="ink_soft">#6E6C66</color>
+    <color name="rule">#D8D5CE</color>
+</resources>

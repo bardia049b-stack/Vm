@@ -7,6 +7,8 @@
 #ifndef RVM_VM_H
 #define RVM_VM_H
 
+#include <stdatomic.h>
+
 #include "../cpu/cpu.h"
 #include "../devices/clint.h"
 #include "../devices/plic.h"
@@ -73,7 +75,9 @@ typedef struct vm {
     u64 dtb_addr;
     u64 entry;
 
-    bool running;
+    /* Written by vm_stop() from any thread (the Android UI, a signal handler)
+     * and read by the run loop, so it has to be atomic. */
+    _Atomic bool running;
     u32 exit_code;
     u64 insns;
     u64 start_ns;
