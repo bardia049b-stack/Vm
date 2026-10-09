@@ -8,10 +8,16 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- INTERNET and ACCESS_NETWORK_STATE are what the guest's virtio-net
+         socket is opened with once PLAN.md step 9 lands; ACCESS_NETWORK_STATE
+         only so the UI can say "offline" instead of timing out silently.
+         Neither is a dangerous permission, so neither prompts. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- The guest disk image is big; do not let the installer put us on a
-         small internal partition. -->
+    <!-- Declared now so the VM can be moved to a foreground service without a
+         manifest change; there is no <service> element yet.  The guest disk
+         image lives in filesDir, not in the APK, so install location is not
+         what this is for. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <!-- A keyboard and a touchscreen are both optional: RVM drives everything
@@ -44,13 +50,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Let a user open a vmlinux straight from a file manager. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" />
-                <data android:scheme="content" />
-            </intent-filter>
         </activity>
     </application>
 </manifest>
