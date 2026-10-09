@@ -194,8 +194,14 @@ The release variant is minified and resource shrunk and signed with the debug
 key so it is installable without setting up a keystore. Do not publish that
 artifact. Cut a real signing config first.
 
-For reference, the debug APK is about 75 KB and the release APK about 65 KB,
-against a 5 MB budget that CI enforces as a hard failure.
+For reference, the debug APK is about 176 KB and the release APK about 152 KB,
+against a 5 MB budget that CI enforces as a hard failure. Release is smaller
+because R8 shrinks 34 KB of dex to 20 KB and shortens the resource paths.
+
+android.yml and release.yml both assert that the APK they just built contains
+classes.dex, that both ABIs carry librvm_jni.so, and that MainActivity,
+RvmNative, RvmView, GfxView and KeyBar survived shrinking with their names. A
+green gradle build does not by itself mean a working app; see CHANGELOG.
 
 android/jni/CMakeLists.txt globs src/*.c with CONFIGURE_DEPENDS and drops
 src/main.c, with ANDROID_STL=none and only arm64-v8a and x86_64. One copy of

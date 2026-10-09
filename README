@@ -77,7 +77,7 @@ emulator and the desktop build cannot drift away from the phone build.
 
 There is no gradle wrapper jar in this repository, so ./gradlew does not exist.
 Use your own Gradle 8.11.1, or let CI do the build. The release APK is about
-65 KB and the workflow fails if it ever goes over 5 MB.
+150 KB and the workflow fails if it ever goes over 5 MB.
 
 
 Continuous integration

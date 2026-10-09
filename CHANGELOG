@@ -22,6 +22,7 @@ Tests. 31 suites and 585 assertions against a harness that builds a real bus,
 MMU, CPU, CLINT, PLIC and UART and emits guest instructions into it.
 
 Android. One Activity, three custom Views, no third party dependencies at all.
+The debug APK is 176 KB and the release APK 152 KB.
 The VM runs on its own thread; input reaches it through a lock free ring and
 vm.running is atomic. The release APK is 65 KB.
 
@@ -76,6 +77,24 @@ repositories, so AGP could not resolve its own aapt2.
 
 android-actions/setup-android@v3 installs the retired tools package by default
 and fails without an explicit package list.
+
+No Java source was in the repository at all. .gitignore had an unanchored rvm
+pattern, meant for the ./rvm binary at the root, which also matched
+android/app/src/main/java/dev/rvm/app/. Gradle reported
+compileJavaWithJavac NO-SOURCE, dexed the generated R classes and produced an
+APK that installs and then dies with ClassNotFoundException. The release build
+was worse: with no code to keep, R8 produced an empty dex that AGP omitted, and
+resource shrinking then removed everything the missing code referenced. Both
+workflows now assert that classes.dex exists, that both ABIs carry
+librvm_jni.so, and that all five classes survived shrinking with their names.
+The patterns are anchored.
+
+KeyBar called add() on itself. It extends LinearLayout, whose method is
+addView(). This was the only compile error in 890 lines of Java, and it was
+found by CI because the Java had never been in front of a compiler before.
+
+android:extractNativeLibs was set in the manifest as well as derived by AGP
+from packaging.jniLibs.useLegacyPackaging, which warns.
 
 The Android manifest declared an ACTION_VIEW filter for octet-stream that
 nothing handled, and an octet-stream URI cannot say whether it is a kernel or a
