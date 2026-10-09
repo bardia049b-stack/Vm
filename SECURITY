@@ -1,0 +1,109 @@
+	Security
+
+Reporting
+---------
+
+Do not open a public issue for a security problem. Email the address on the
+maintainer's GitHub profile, or use GitHub private vulnerability reporting if
+it is enabled here. Put [RVM security] in the subject.
+
+Send what you found, the shortest guest program or disk image that triggers it,
+the commit you tested, and what you expected instead. A proof of concept beats a
+description, and an ASan or UBSan report with a stack trace beats both.
+
+Acknowledgement within 72 hours. A fix or a documented mitigation within 14
+days for anything that lets a guest reach the host. Credit in the advisory
+unless you ask otherwise.
+
+
+Scope
+-----
+
+RVM runs untrusted guest code by design. The boundary that matters is guest to
+host.
+
+In scope: any guest instruction, MMIO access, virtio descriptor or FDT path
+that reads or writes host memory outside the buffers allocated for it. Integer
+overflow and unchecked length or index arithmetic in the device models, the
+loader, the MMU and the virtqueue walker, since all of them consume guest
+controlled values. A descriptor chain that makes the emulator loop forever or
+allocate without bound. Path traversal through anything the guest can
+influence. On Android, the guest reaching a file, socket or binder service it
+should not.
+
+Out of scope: anything that needs a host process already running with elevated
+privileges, since the Android app runs unprivileged. Bugs in the guest kernel
+or in Debian. Side channels needing local access to the host CPU; RVM is a
+software emulator with no constant time guarantees and does not claim to resist
+cache or timing attacks from a neighbour process.
+
+
+Threat model
+------------
+
+One thread owns one contiguous guest RAM region. Everything else is a device
+model reading and writing that region through bus_load() and bus_store().
+
+Every guest supplied length, offset and index is bounds checked against the
+region it indexes. Virtqueue descriptors are the sharp edge: addr and len come
+straight out of guest memory, so the walker has to reject a chain that leaves
+RAM, that overlaps itself, or that is longer than the queue.
+
+Device state is fixed size and allocated once. No guest input may cause an
+allocation whose size the guest chose.
+
+Host file descriptors are opened by the host, never by the guest. A disk path
+comes from the command line or from the Android file picker, not from anything
+inside the disk image.
+
+No guest data is interpreted as a format string. rvm_log() takes a literal
+format and arguments, and the console sink writes bytes.
+
+MainActivity is the only exported component and its only intent filter is the
+launcher one. Kernels and disk images enter through ACTION_OPEN_DOCUMENT, so
+the user picks the file in the system picker. The resulting content URI is
+copied into the app's private filesDir and treated as untrusted guest data from
+then on. RVM never dereferences a raw path from an intent and never grants URI
+permissions onward.
+
+
+Versions
+--------
+
+main gets security fixes first. There is one release line and no long term
+support branches. A security fix is a patch release.
+
+
+What is already in place
+------------------------
+
+Every CI run builds under AddressSanitizer and UndefinedBehaviorSanitizer with
+halt_on_error=1 and leak detection on.
+
+The tree compiles with -Wall -Wextra -Wshadow -Wundef -Wpointer-arith
+-Wcast-qual -Wstrict-prototypes -Wmissing-prototypes, and CI builds it
+optimised with -Werror as well as syntax checked, because constant folding at
+-O2 finds warnings that -fsyntax-only does not.
+
+librvm_jni.so is built with -fvisibility=hidden, so only the
+Java_dev_rvm_app_RvmNative_* entry points are exported.
+
+The APK is minified and resource shrunk, and the ProGuard rules keep only the
+members the native side looks up by name.
+
+No dangerous permissions. The manifest declares INTERNET and
+ACCESS_NETWORK_STATE, neither of which prompts, plus FOREGROUND_SERVICE which
+is reserved for a future VM service and has no service behind it. There is no
+storage permission; guest images are copied into private filesDir through the
+storage access framework. allowBackup is false, so an image cannot be pulled
+out with adb backup.
+
+
+If you are shipping this
+------------------------
+
+RVM is young. Do not use it as the only isolation boundary for code you would
+not otherwise run, and do not put its console or its network device on an
+untrusted network without a host level sandbox around the process. A container,
+a seccomp filter or Android's own app sandbox are all reasonable second layers
+and none of them need a change here.

@@ -4,7 +4,7 @@
 # mkrootfs.sh -- build a bootable Debian riscv64 root filesystem and pack it
 #                into disk.img.
 #
-# This is step 8 of PLAN.md.  It needs real privileges and a real network, so
+# This is step 8 of PLAN.  It needs real privileges and a real network, so
 # run it on a Debian/Ubuntu host, not inside a restricted container:
 #
 #     sudo ./tools/mkrootfs.sh --suite trixie --size 2G --out disk.img
@@ -183,7 +183,7 @@ echo "rvm" > "$ROOTDIR/etc/hostname"
 cat > "$ROOTDIR/etc/hosts" <<'HOSTS'
 127.0.0.1   localhost
 127.0.1.1   rvm
-10.0.2.15   rvm           # what the built-in DHCP hands out; see PLAN.md step 9
+10.0.2.15   rvm           # what the built-in DHCP hands out; see PLAN step 9
 HOSTS
 
 log "setting the root password"

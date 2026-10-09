@@ -1,0 +1,272 @@
+	Build order
+
+Twelve steps. Each one ends with something that runs and something that is
+tested. A step that leaves the tree red is not finished.
+
+	step 1	RV64I core			done
+	step 2	UART, "Hello, RVM!"		done
+	step 3	CSRs and traps			done
+	step 4	MMU: Sv39, Sv48, Sv57		done
+	step 5	CLINT				done
+	step 6	PLIC				done
+	step 7	virtio-blk			done
+	step 8	boot Debian			scripts written, not verified
+	step 9	virtio-net			not started
+	step 10	virtio-gpu, virtio-input	not started
+	step 11	virtio-snd			not started
+	step 12	hot block JIT			not started
+
+
+Rules
+-----
+
+These are constraints, not preferences. A change that breaks one needs a
+decision recorded here first.
+
+C11, libc and libm. No glib, no zlib, no vendored third party code. The desktop
+binary is under 300 KB. The APK stays under 5 MB and CI fails the build if it
+does not.
+
+On Android: no AndroidX, no Material, no Compose, no WebView. One Activity,
+three custom Views, a LinearLayout of buttons. Terminal on Canvas, graphics on
+a SurfaceView, audio on AAudio. The dependencies block stays empty.
+
+One thread. No locks in src/, no allocations on the hot path. Memory, the TLB
+and the virtio rings are allocated once in vm_new(). The only shared state in
+the whole project is the Android input ring and vm.running, which is atomic.
+
+No DMA engine. Device transfers are memcpy between the guest descriptor chain
+and a host buffer.
+
+No clever JIT. When step 12 lands it translates hot basic blocks, keys the
+cache on guest PC, falls back to the interpreter for everything else, and does
+no register allocation and no optimisation passes.
+
+Soft colours and no decoration in the UI. #F5F4F0 paper, #2B2B28 ink, #D8D5CE
+rules. Monospace in the terminal. No animation, no elevation, no gradients.
+Icons are single weight line vectors.
+
+
+Step 1: RV64I core
+------------------
+
+src/cpu/cpu.c, src/cpu/compressed.c, src/cpu/fp.c.
+
+RV64I plus M, A, F, D and C. Compressed instructions are expanded to their
+32-bit form before decode so there is one execution path and c.addw cannot
+drift away from addw.
+
+Tested by tests/test_cpu.c. The bugs that were found and are now covered,
+because everyone falls into them:
+
+LUI sign extends its immediate. th_li() in the harness zero extends to 32 bits.
+
+The B and J immediates are bit permuted, not contiguous. An off by one in the
+reassembly corrupts every branch in the system.
+
+funct6, not funct7, discriminates the RV64 shift immediates.
+
+INT64_MIN / -1 has to be handled before the host division runs or the host
+raises SIGFPE.
+
+mulhsu zero extends rs2. amomin and amomax compare signed, amominu and amomaxu
+compare zero extended, and the value written back to the register is always the
+old memory value.
+
+fcvt to integer saturates out of range and raises only NV. Earlier inexactness
+still accumulates in fflags.
+
+Anything that returns from cpu_exec32() before the shared epilogue has to
+advance c->pc itself, and anything that writes c->pc, meaning mret and sret,
+has to have its result copied into npc.
+
+Signed overflow is undefined in C even where RISC-V specifies a wrap. addw,
+subw, addiw and mul are computed in the matching unsigned type.
+
+
+Step 2: UART
+------------
+
+src/devices/uart.c. ns16550a at 0x10000000, IRQ 10, 16 byte FIFO, DLAB
+divisors. The transmit sink is a function pointer so tests capture output
+instead of printing it.
+
+
+Step 3: CSRs and traps
+----------------------
+
+src/cpu/csr.c and the SYSTEM opcode in cpu.c. Machine and supervisor CSRs, the
+trap path with medeleg and mideleg delegation, mret, sret, wfi, sfence.vma,
+ecall and ebreak. src/vm/sbi.c has the SBI a kernel needs: base, timer, console
+putchar, system reset.
+
+mstatus.SD is computed on read from FS and XS. It is architecturally read only
+and a stored copy goes stale the moment an FP instruction retires.
+
+
+Step 4: MMU
+-----------
+
+src/mmu/mmu.c. Sv39, Sv48 and Sv57 in one loop parameterised by level count.
+Superpages at every level including the misaligned PPN check. A and D are
+managed by hardware, which the spec permits and which avoids the trap storm a
+software managed implementation causes on Linux. Direct mapped TLB with a
+generation tag, so sfence.vma invalidates by bumping the tag.
+
+R=0,W=1 is reserved and faults. W=1,X=1 is legal. Treating the second as
+reserved faults on every writable and executable page Linux maps.
+
+
+Step 5: CLINT
+-------------
+
+src/devices/clint.c at 0x02000000. msip, mtimecmp per hart, and mtime driven by
+clock_gettime at a 10 MHz guest timebase so the guest sees time pass at the
+host rate.
+
+clint_tick() advances mtime and returns the MIP bits it drives. Those are two
+different values and conflating them made rdtime read as zero.
+
+
+Step 6: PLIC
+------------
+
+src/devices/plic.c at 0x0c000000. Priorities, per context enables, threshold,
+claim and complete. best_source() walks the pending bitmaps a word at a time
+and skips words with nothing pending and enabled; it runs on every interrupt
+refresh and the usual answer is no source.
+
+
+Step 7: virtio-blk
+------------------
+
+src/devices/virtio.c is the mmio transport and the split virtqueue.
+src/devices/virtio_blk.c is the device, on slot 0, backed by a host file with
+pread and pwrite. Eight mmio slots at 0x10001000 with a 0x1000 stride, IRQs 1
+to 8. Empty slots decode as no device present so the guest probe does not
+fault.
+
+For whoever writes the next device:
+
+The request header is 16 readable bytes, type, reserved, sector.
+
+Data is readable for T_OUT and carries VRING_WRITE for T_IN. The last
+descriptor is one writable status byte. The used ring len counts all device
+written bytes, status included.
+
+Reusing a descriptor chain across a direction change needs put_desc re-issued
+with the flipped VRING_WRITE flag.
+
+
+Step 8: boot Debian
+-------------------
+
+Written, not verified. Building a rootfs needs root, a couple of gigabytes of
+RAM and a route to deb.debian.org, and none of that existed where this was
+developed. What ships is the tooling plus the parts of step 8 that are
+unit tested, which is the FDT builder and the ELF loader.
+
+tools/mkrootfs.sh runs debootstrap --arch=riscv64 --variant=minbase trixie
+under a qemu-user-static chroot with --second-stage, swaps systemd for
+sysvinit-core, sets a root password, writes an inittab with a ttyS0 getty and
+an fstab for /dev/vda, /proc and /sys, then packs the tree into an ext4 image
+with mke2fs -d.
+
+tools/fetch_kernel.sh pulls linux-image-6.12+deb13-riscv64 from the Debian pool
+and extracts the uncompressed ELF vmlinux. The loader wants real ELF64 with
+PT_LOAD segments, not a compressed Image and not an EFI zboot stub.
+
+dtb/rvm.dts is compatible = "rvm,virt", memory@80000000, cpus with
+riscv,isa = "rv64imafdc" and mmu-type = "riscv,sv57", serial@10000000,
+clint@2000000, plic@c000000 and the eight virtio_mmio nodes.
+
+Success is this on the console:
+
+	Debian GNU/Linux 13 rvm ttyS0
+
+	rvm login:
+
+Two dts rules learned the hard way. Give interrupt controllers real labels, so
+plic: plic@c000000, because dtc rejects a &plic reference to a node it cannot
+label. And never write phandle = <N> by hand; let dtc allocate them.
+
+
+Step 9: networking
+------------------
+
+src/devices/virtio_net.c on slot 1. Receive and transmit queues, a TAP backend
+on Linux, and a user mode fallback for Android, which has no TAP device.
+
+The user mode stack stays small. ARP for the gateway, a DHCP offer of
+10.0.2.15/24, enough IP to route, and just enough TCP and UDP to carry a
+connection through NAT. No fragment reassembly, no IPv6.
+
+On the host, for the TAP path:
+
+	ip tuntap add dev rvm0 mode tap
+	ip link set rvm0 up
+	ip addr add 10.0.2.1/24 dev rvm0
+	echo 1 > /proc/sys/net/ipv4/ip_forward
+	iptables -t nat -A POSTROUTING -s 10.0.2.0/24 -j MASQUERADE
+
+tools/run.sh --net does all of it. Acceptance is that apt update, curl, wget,
+ssh out and ping work inside the guest.
+
+
+Step 10: graphics
+-----------------
+
+src/devices/virtio_gpu.c on slot 2, src/devices/virtio_input.c on slot 3. The
+GPU implements resource_create_2d, resource_attach_backing,
+transfer_to_host_2d, set_scanout and resource_flush into a host framebuffer.
+Input reports EV_REL and EV_KEY from the Android touch layer.
+
+The framebuffer reaches GfxView, which is the SurfaceView that already exists,
+through the onFrame(byte[] rgba, int w, int h, int stride) callback that
+rvm_jni.c already declares. Acceptance is X11 or Wayland coming up inside the
+guest with a visible window and a working pointer.
+
+
+Step 11: audio
+--------------
+
+src/devices/virtio_snd.c on slot 4. PCM only. One queue, one stream, no mixer,
+no volume control. The host end is AAudio on Android and a null sink elsewhere.
+android/jni/CMakeLists.txt already links aaudio when the NDK provides it and
+defines RVM_HAVE_AAUDIO. Acceptance is aplay working inside the guest and being
+audible on the phone.
+
+
+Step 12: hot block JIT
+----------------------
+
+src/cpu/jit.c. Count executions per basic block. After 50, translate the block
+and cache it keyed on guest PC. Everything else keeps running in the
+interpreter, which stays the reference implementation.
+
+The cache has to be flushed on sfence.vma and on any write to a page that has
+been translated, or self modifying code silently executes stale host
+instructions. Linux does use self modifying code, in modules and in ftrace.
+
+No register allocation beyond mapping the guest register file to fixed host
+locations. No inlining across blocks. Acceptance is 500 MIPS or better on a
+sustained integer loop measured with --stats, and a test proving the JIT and
+the interpreter agree instruction for instruction across the whole suite.
+
+The interpreter does about 32 MIPS today on a throttled CI runner. Most of what
+was slow about it was per instruction syscalls, not decoding; see CHANGELOG.
+
+
+The pc = 0xfffffffffffffffe bug
+-------------------------------
+
+The guest jumps to data. It shows up as a PC of -2, which is what a jalr or a
+corrupted return address gives you when it lands two bytes below zero, and it
+always means the emulator retired something the guest never intended as code.
+Usually a decode bug that got the instruction length wrong, or a trap path that
+wrote epc from a stale npc.
+
+The recipe is in docs/DEBUGGING. Narrow the window with -n, arm the trace with
+RVM_TRACE_FROM just before the last known good address, read the last retired
+instruction, then resolve it with objdump and addr2line. Tracing the whole boot
+produces gigabytes and answers nothing.

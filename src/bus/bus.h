@@ -4,7 +4,7 @@
  * Deliberately simple: a linear scan over at most a dozen regions.  The VM is
  * single threaded, so there is not a single lock anywhere in this file, and
  * RAM accesses are a bounds check plus a memcpy -- no DMA engine, no scatter
- * lists, exactly as PLAN.md prescribes for a lean emulator.
+ * lists, exactly as PLAN prescribes for a lean emulator.
  *
  * SPDX-License-Identifier: MIT
  */

@@ -67,7 +67,7 @@ jobs:
           SIZE=$(stat -c %s "$APK")
           MB=$(( SIZE / 1048576 ))
           echo "### ${{ matrix.variant }} APK: ${MB} MiB (${SIZE} bytes)" >> "$GITHUB_STEP_SUMMARY"
-          # The lightweight rule from PLAN.md: the APK must stay under 5 MB.
+          # The lightweight rule from PLAN: the APK must stay under 5 MB.
           if [ "$SIZE" -gt $(( 5 * 1024 * 1024 )) ]; then
             echo "::error::APK is ${MB} MiB, over the 5 MiB budget"
             exit 1

@@ -3,7 +3,7 @@
  *
  * Host float/double are used directly and IEEE exception flags are harvested
  * from <fenv.h>, which is part of libc -- no softfloat dependency, keeping the
- * "libc + libm only" promise from PLAN.md.
+ * "libc + libm only" promise from PLAN.
  *
  * Documented limitation: rounding mode RMM (rm=4) has no C equivalent and is
  * executed as RNE.  No mainstream toolchain or the Linux kernel emits RMM, so

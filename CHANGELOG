@@ -1,0 +1,86 @@
+	Changelog
+
+Newest first. Nothing here has been released yet; tagging v0.1.0 is what fires
+.github/workflows/release.yml.
+
+
+0.1.0
+-----
+
+The first version that boots a bare metal guest, passes its own test suite and
+builds an installable APK in CI.
+
+The emulator. RV64IMAFDC in C11 with no dependencies beyond libc and libm.
+src/cpu has the core, the CSR file, the trap path and the FP unit. src/mmu does
+Sv39, Sv48 and Sv57 with superpages and a direct mapped TLB. src/bus is a flat
+sorted region table. src/devices has an ns16550a UART, a CLINT driven by the
+host clock, a PLIC, the virtio-mmio transport with a split virtqueue, and
+virtio-blk. src/loader reads ELF64 and raw blobs and builds the FDT in C.
+src/vm assembles the machine, runs the loop and implements the SBI calls.
+
+Tests. 31 suites and 585 assertions against a harness that builds a real bus,
+MMU, CPU, CLINT, PLIC and UART and emits guest instructions into it.
+
+Android. One Activity, three custom Views, no third party dependencies at all.
+The VM runs on its own thread; input reaches it through a lock free ring and
+vm.running is atomic. The release APK is 65 KB.
+
+Build. A plain GNU Makefile with MODE=release|debug|sanity, WERROR=1 and
+TEST_ARGS. scripts/build.sh, scripts/test.sh and scripts/clean.sh wrap it.
+tools/mkrootfs.sh, tools/fetch_kernel.sh and tools/run.sh build and boot a
+Debian guest. Five GitHub Actions workflows: build, test, lint, android and
+release.
+
+Tracing. RVM_TRACE_FROM and --trace-from open the instruction trace at one
+guest PC and drop everything before it.
+
+Fixes worth recording, because each one is easy to walk into again.
+
+CSR_TIME read as zero. clint_tick() advances mtime and returns the MSIP and
+MTIP bits it drives. vm_run() and the test harness both assigned that return
+value to cpu.hw_time, which csr.c serves for CSR_TIME, so rdtime returned
+interrupt bits instead of mtime. The Linux riscv clocksource is rdtime. The
+harness had a second copy of the same mistake and also dropped MSIP.
+
+The run loop did 385 ns per instruction. Two things ran on every retired
+instruction and neither needed to. pump_input() is a read() syscall on stdin
+and the clint refresh is a clock_gettime(). Both are now done every 256
+instructions and immediately whenever a device moves an interrupt line. Separately,
+best_source() scanned all 64 PLIC sources twice per refresh to answer what is
+almost always no source. Together: 2.60 MIPS to 32.39 MIPS on a 20 million
+instruction nop loop.
+
+--stats reported throughput 1000 times too low. It computed instructions per
+nanosecond and called the result MIPS.
+
+Signed overflow in addw, subw, addiw and mul. RISC-V specifies a wrap, C
+specifies undefined behaviour. These now compute in the matching unsigned type.
+Found by the sanitizers job.
+
+sext() and imm_clui() shifted negative signed values left. Found by UBSan.
+
+The ELF builder's PUT16, PUT32 and PUT64 macros shifted the caller's
+expression, so PUT64(40, 0) shifted a 32 bit int by 32. Found by UBSan.
+
+make coverage had clean as a prerequisite, which under -j deletes build/ while
+parallel compiles are writing into it. It now runs two sequential sub-makes.
+
+scripts/*.sh only accepted -j 4, so CI's -j"$(nproc)" was rejected as an
+unknown option.
+
+dtb/rvm.dts referenced &plic on a node that carried only a hand written phandle
+property, which dtc rejects.
+
+android/settings.gradle.kts declared plugin repositories but no project
+repositories, so AGP could not resolve its own aapt2.
+
+android-actions/setup-android@v3 installs the retired tools package by default
+and fails without an explicit package list.
+
+The Android manifest declared an ACTION_VIEW filter for octet-stream that
+nothing handled, and an octet-stream URI cannot say whether it is a kernel or a
+disk image. Removed. Kernels and images enter through ACTION_OPEN_DOCUMENT,
+where the user picks the file.
+
+make lint is -fsyntax-only and so never saw two warnings that only appear once
+gcc folds constants at -O2. scripts/test.sh grew --werror, which CI uses.

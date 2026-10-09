@@ -1,0 +1,94 @@
+	RVM
+
+RVM is a RISC-V system emulator. It implements RV64IMAFDC, the Sv39, Sv48 and
+Sv57 page table formats, and enough virtio to boot an unmodified Debian kernel
+and userland from a disk image. It runs on Linux and macOS and it builds as an
+Android app.
+
+It is C11 against libc and libm. There is nothing else to install.
+
+
+Building
+--------
+
+	make
+
+produces ./rvm, about 295 KB. You need a C11 compiler and GNU make.
+
+	make test
+
+builds and runs the test suite, 31 suites and 585 assertions.
+
+	make lint
+	make MODE=sanity test
+	make format
+
+are the -Werror syntax pass, an ASan and UBSan build, and clang-format. See
+docs/BUILDING for every target, mode and variable.
+
+
+Running
+-------
+
+You need a kernel and a disk image. Both come from Debian:
+
+	./tools/fetch_kernel.sh --out vmlinux
+	sudo ./tools/mkrootfs.sh --out disk.img
+	./tools/run.sh
+
+That ends at a login prompt on ttyS0. mkrootfs.sh needs root, about 2 GB of
+memory and a route to deb.debian.org.
+
+rvm builds its own device tree at boot, so no DTB file is required. dtb/rvm.dts
+is the same tree written out for editing, and make dtb compiles it if you want
+to compare.
+
+	./rvm --help
+
+lists the options. The useful ones are -m for guest memory, -k for the kernel,
+-d for the disk, --stats for counters and --trace-from for the instruction
+trace.
+
+
+Documentation
+-------------
+
+	PLAN			what is built, what is not, and in what order
+	CHANGELOG		what changed
+	CONTRIBUTING		how to send a patch
+	SECURITY		how to report a guest escape
+	docs/ARCHITECTURE	how the pieces fit together
+	docs/BUILDING		build modes, targets, the Android APK, CI
+	docs/DEBUGGING		tracing a guest that goes wrong
+
+
+Android
+-------
+
+The app lives in android/. It is one Activity and three custom Views. There is
+no AndroidX, no Material Components, no Compose and no WebView; the terminal is
+drawn with Canvas and the graphics surface is a SurfaceView. The dependencies
+block in android/app/build.gradle.kts is empty and should stay that way.
+
+android/jni/CMakeLists.txt compiles src/ directly, so there is one copy of the
+emulator and the desktop build cannot drift away from the phone build.
+
+	cd android && gradle --no-daemon assembleDebug
+
+There is no gradle wrapper jar in this repository, so ./gradlew does not exist.
+Use your own Gradle 8.11.1, or let CI do the build. The release APK is about
+65 KB and the workflow fails if it ever goes over 5 MB.
+
+
+Continuous integration
+----------------------
+
+Four workflows run on every push to main: build, test, lint and android. A
+fifth, release, runs on a v* tag and publishes the APK. The badges are
+deliberately absent; look at the Actions tab.
+
+
+Licensing
+---------
+
+MIT. See LICENSE.

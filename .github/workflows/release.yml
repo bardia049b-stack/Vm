@@ -1,5 +1,5 @@
-# Tag a release (v*) and this runs the full gate -- lint, tests, desktop builds
-# and the APK -- then publishes everything as GitHub release assets.
+# Tag v* and this runs the gate, builds the APK and publishes it. The release
+# has no body text: the APK is the point.
 name: release
 
 on:
@@ -12,14 +12,11 @@ on:
         required: true
 
 permissions:
-  contents: write   # softprops/action-gh-release creates/updates the release
+  contents: write   # softprops/action-gh-release creates the release
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
-
-env:
-  CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
   gate:
@@ -31,7 +28,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gcc-14 clang-18 ccache device-tree-compiler
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 clang-18 device-tree-compiler
 
       - uses: actions/setup-node@v4
         with:
@@ -40,100 +38,18 @@ jobs:
       - name: clang-format
         run: |
           npm install --no-save --no-audit --no-fund clang-format@1.8.0
-          npx clang-format --dry-run --Werror $(find src tests -name '*.c' -o -name '*.h' | sort)
+          npx clang-format --dry-run --Werror \
+            $(find src tests -name '*.c' -o -name '*.h' | sort)
 
       - name: Lint and test
         run: |
           make lint
-          ./scripts/test.sh -v -j"$(nproc)"
+          ./scripts/test.sh -v --werror -j"$(nproc)"
 
-  build-linux:
-    name: build linux
-    runs-on: ubuntu-24.04
-    needs: gate
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gcc-14 ccache device-tree-compiler
-
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-release-linux-${{ github.ref_name }}
-          restore-keys: ccache-release-linux-
-
-      - name: Build
-        run: |
-          mkdir -p "$CCACHE_DIR"
-          make CC=gcc-14 -j"$(nproc)" WERROR=1
-          make dtb
-
-      - name: Package
-        run: |
-          mkdir -p dist
-          strip --strip-unneeded rvm || true
-          cp rvm dist/rvm-linux-amd64
-          cp dtb/rvm.dtb dist/
-          tar -C dist -czf rvm-linux-amd64.tar.gz rvm-linux-amd64 rvm.dtb
-          sha256sum rvm-linux-amd64.tar.gz > rvm-linux-amd64.tar.gz.sha256
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux
-          path: |
-            rvm-linux-amd64.tar.gz
-            rvm-linux-amd64.tar.gz.sha256
-          if-no-files-found: error
-
-  build-macos:
-    name: build macos
-    runs-on: macos-14
-    needs: gate
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ccache
-        run: brew install ccache
-
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-release-macos-${{ github.ref_name }}
-          restore-keys: ccache-release-macos-
-
-      - name: Build
-        run: |
-          mkdir -p "$CCACHE_DIR"
-          make -j"$(sysctl -n hw.ncpu)" WERROR=1
-
-      - name: Package
-        run: |
-          mkdir -p dist
-          strip -x rvm || true
-          cp rvm dist/rvm-macos-arm64
-          tar -C dist -czf rvm-macos-arm64.tar.gz rvm-macos-arm64
-          shasum -a 256 rvm-macos-arm64.tar.gz > rvm-macos-arm64.tar.gz.sha256
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-macos
-          path: |
-            rvm-macos-arm64.tar.gz
-            rvm-macos-arm64.tar.gz.sha256
-          if-no-files-found: error
-
-  build-android:
+  apk:
     name: build apk
     runs-on: ubuntu-24.04
     needs: gate
-    defaults:
-      run:
-        working-directory: android
     steps:
       - uses: actions/checkout@v4
 
@@ -145,8 +61,7 @@ jobs:
       - name: Set up the Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # v3 defaults to installing the retired `tools` package; list exactly
-          # what the build needs so sdkmanager does not fail on it.
+          # v3 defaults to the retired `tools` package and fails without this.
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1'
 
       - name: Accept the SDK licences
@@ -157,77 +72,38 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Assemble release
+        working-directory: android
         run: gradle --no-daemon assembleRelease
 
-      - name: Package
+      - name: Collect the APK
         run: |
-          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
-          cp "$APK" ../rvm-android.apk
-          cd ..
-          sha256sum rvm-android.apk > rvm-android.apk.sha256
-          SIZE=$(stat -c %s rvm-android.apk)
-          echo "APK size: $SIZE bytes ($(( SIZE / 1024 )) KiB)"
-          test "$SIZE" -lt $(( 5 * 1024 * 1024 )) || { echo "::error::APK over 5 MiB"; exit 1; }
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/*.apk out/rvm.apk
+          ls -l out/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-android
-          path: |
-            rvm-android.apk
-            rvm-android.apk.sha256
-          if-no-files-found: error
+          name: release-apk
+          path: out/rvm.apk
 
   publish:
-    name: publish release
+    name: publish
     runs-on: ubuntu-24.04
-    needs: [build-linux, build-macos, build-android]
+    needs: apk
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Collect the assets
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          pattern: release-*
+          name: release-apk
           path: assets
-          merge-multiple: true
 
-      - name: Build the notes
-        run: |
-          {
-            echo "### Changes since the previous tag"
-            echo '```'
-            PREV=$(git describe --tags --abbrev=0 "${{ github.ref_name }}"^ 2>/dev/null || echo "")
-            if [ -n "$PREV" ]; then
-              git log --oneline --no-decorate "$PREV".."${{ github.ref_name }}"
-            else
-              git log --oneline --no-decorate -20 "${{ github.ref_name }}"
-            fi
-            echo '```'
-            echo
-            echo "### Assets"
-            echo "| File | SHA-256 |"
-            echo "| --- | --- |"
-            for f in assets/*.sha256; do
-              [ -e "$f" ] || continue
-              printf '| `%s` | `%s` |\n' "$(basename "${f%.sha256}")" "$(cut -d' ' -f1 "$f")"
-            done
-            echo
-            echo "Verified by the lint, test and android workflows on this tag."
-          } > NOTES.md
-
+      # No body, no generated notes. Just the tag as the title and the APK.
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: RVM ${{ github.event.inputs.tag || github.ref_name }}
-          body_path: NOTES.md
+          name: ${{ github.event.inputs.tag || github.ref_name }}
           draft: false
+          generate_release_notes: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: |
-            assets/rvm-linux-amd64.tar.gz
-            assets/rvm-linux-amd64.tar.gz.sha256
-            assets/rvm-macos-arm64.tar.gz
-            assets/rvm-macos-arm64.tar.gz.sha256
-            assets/rvm-android.apk
-            assets/rvm-android.apk.sha256
+          files: assets/rvm.apk
           fail_on_unmatched_files: true

@@ -395,7 +395,7 @@ void vm_print_stats(const vm *v) {
     double secs = elapsed ? (double)elapsed / 1e9 : 1e-9;
     /* Written out long hand: instructions per second, divided by a million.
      * Instructions per nanosecond is *not* MIPS -- that is off by 1000x, and
-     * PLAN.md step 12 measures the JIT against this number. */
+     * PLAN step 12 measures the JIT against this number. */
     double mips = (elapsed > 0) ? (double)v->insns / secs / 1e6 : 0.0;
     fprintf(stderr,
             "\n--- RVM statistics -------------------------------------------\n"

@@ -38,7 +38,7 @@ usage: $(basename "$0") [options] [-- extra ./rvm arguments]
   -m, --mem MIB        guest RAM in MiB        (default: $MEM)
   -a, --bootargs STR   kernel command line
       --net            attach virtio-net on the '$TAP' TAP device
-                       (needs a build with virtio-net; see PLAN.md step 9)
+                       (needs a build with virtio-net; see PLAN step 9)
       --tap NAME       TAP device name         (default: $TAP)
       --trace-from PC  open the instruction trace at that guest PC
       --trace          trace every retired instruction (large!)
@@ -108,12 +108,12 @@ fi
 
 # ------------------------------------------------------------------ networking
 # virtio-net is bridged to a TAP device.  The VM does the ARP/DHCP/NAT itself,
-# so all the host needs is the interface and IP forwarding.  See PLAN.md step 9.
+# so all the host needs is the interface and IP forwarding.  See PLAN step 9.
 if [ "$NET" = 1 ]; then
     # Failing here rather than after the TAP device exists: virtio-net is
-    # PLAN.md step 9, so most builds of rvm do not know --net at all.
+    # PLAN step 9, so most builds of rvm do not know --net at all.
     if ! ./rvm --help 2>&1 | grep -q -- '--net'; then
-        die "this build of ./rvm has no --net; virtio-net is PLAN.md step 9"
+        die "this build of ./rvm has no --net; virtio-net is PLAN step 9"
     fi
     [ "$(id -u)" = 0 ] || die "--net needs root to create the TAP device"
     if ! ip link show "$TAP" >/dev/null 2>&1; then

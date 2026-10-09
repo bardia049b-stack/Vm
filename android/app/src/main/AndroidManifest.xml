@@ -9,7 +9,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- INTERNET and ACCESS_NETWORK_STATE are what the guest's virtio-net
-         socket is opened with once PLAN.md step 9 lands; ACCESS_NETWORK_STATE
+         socket is opened with once PLAN step 9 lands; ACCESS_NETWORK_STATE
          only so the UI can say "offline" instead of timing out silently.
          Neither is a dangerous permission, so neither prompts. -->
     <uses-permission android:name="android.permission.INTERNET" />
