@@ -117,11 +117,10 @@ rvm_err vm_new(vm *v, const vm_opts *o) {
      * delegates, keep ecall-from-S here (that is the SBI call path the run
      * loop interprets) and delegate the supervisor interrupt lines.
      */
-    v->cpu.csr[CSR_MEDELEG] = (1u << EXC_INST_MISALIGNED) | (1u << EXC_INST_FAULT) |
-                              (1u << EXC_ILLEGAL_INST) | (1u << EXC_BREAKPOINT) |
-                              (1u << EXC_LOAD_MISALIGNED) | (1u << EXC_LOAD_FAULT) |
-                              (1u << EXC_STORE_MISALIGNED) | (1u << EXC_STORE_FAULT) |
-                              (1u << EXC_ECALL_U);
+    v->cpu.csr[CSR_MEDELEG] =
+        (1u << EXC_INST_MISALIGNED) | (1u << EXC_INST_FAULT) | (1u << EXC_ILLEGAL_INST) |
+        (1u << EXC_BREAKPOINT) | (1u << EXC_LOAD_MISALIGNED) | (1u << EXC_LOAD_FAULT) |
+        (1u << EXC_STORE_MISALIGNED) | (1u << EXC_STORE_FAULT) | (1u << EXC_ECALL_U);
     v->cpu.csr[CSR_MIDELEG] = MIP_SSIP | MIP_STIP | MIP_SEIP;
     if ((e = plic_init(&v->plic)) != RVM_OK)
         goto fail;
