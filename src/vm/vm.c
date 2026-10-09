@@ -155,10 +155,26 @@ rvm_err vm_new(vm *v, const vm_opts *o) {
                    virtio_store);
     }
 
+    /* virtio-net on the next free slot (usually 1). Userspace NAT, no TAP. */
+    {
+        u32 slot = v->blk_present ? 1u : 0u;
+        rvm_err ne = virtio_net_init(&v->net);
+        if (ne == RVM_OK) {
+            v->net_present = true;
+            virtio_init(&v->vio[slot], &v->bus, virtio_net_backend(&v->net), RVM_VIRTIO_IRQ(slot));
+            v->net.vio = &v->vio[slot];
+            virtio_set_irq(&v->vio[slot], irq_raise, v);
+            bus_attach(&v->bus, "virtio-net", RVM_VIRTIO_BASE + slot * RVM_VIRTIO_STRIDE,
+                       RVM_VIRTIO_STRIDE, &v->vio[slot], virtio_load, virtio_store);
+        }
+    }
+
     /* Slots that have no backend still need to decode as "no device present"
      * so Linux' virtio_mmio probe does not fault: DeviceID reads 0. */
-    for (u32 i = v->blk_present ? 1u : 0u; i < RVM_VIRTIO_COUNT; i++) {
+    for (u32 i = 0; i < RVM_VIRTIO_COUNT; i++) {
         u64 base = RVM_VIRTIO_BASE + i * RVM_VIRTIO_STRIDE;
+        if (bus_find(&v->bus, base))
+            continue;
         bus_attach(&v->bus, "virtio-empty", base, RVM_VIRTIO_STRIDE, NULL, virtio_absent_load,
                    NULL);
     }
@@ -306,6 +322,8 @@ static void refresh_interrupts(vm *v) {
 }
 
 static void pump_input(vm *v) {
+    if (v->net_present)
+        virtio_net_poll(&v->net);
     if (!v->opts.poll)
         return;
     u8 buf[256];
@@ -475,6 +493,8 @@ void vm_free(vm *v) {
     rvm_trace_set(NULL, NULL);
     if (v->blk_present)
         virtio_blk_close(&v->blk);
+    if (v->net_present)
+        virtio_net_shutdown(&v->net);
     free(v->dtb);
     bus_free(&v->bus);
     memset(v, 0, sizeof(*v));

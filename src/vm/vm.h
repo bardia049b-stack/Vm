@@ -15,6 +15,7 @@
 #include "../devices/uart.h"
 #include "../devices/virtio.h"
 #include "../devices/virtio_blk.h"
+#include "../devices/virtio_net.h"
 #include "../loader/loader.h"
 #include "../mmu/mmu.h"
 #include "sbi.h"
@@ -68,8 +69,10 @@ typedef struct vm {
     sbi sbi;
 
     virtio_blk blk;
+    virtio_net net;
     virtio vio[RVM_VIRTIO_COUNT];
     bool blk_present;
+    bool net_present;
 
     u8 *dtb;
     u32 dtb_len;

@@ -10,15 +10,19 @@
  */
 package dev.rvm.app;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.text.InputType;
 import android.util.AttributeSet;
+import android.view.GestureDetector;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.Toast;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -47,6 +51,7 @@ public final class RvmView extends View {
     private int rows = 24;
 
     private KeyListener keys;
+    private final GestureDetector gestures;
 
     public interface KeyListener { void onKey(byte b); }
 
@@ -65,6 +70,51 @@ public final class RvmView extends View {
         setFocusable(true);
         setFocusableInTouchMode(true);
         setBackgroundColor(0xFFF5F4F0);
+
+        gestures = new GestureDetector(c, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onSingleTapUp(MotionEvent e) {
+                requestFocus();
+                InputMethodManager imm =
+                    (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(RvmView.this, InputMethodManager.SHOW_IMPLICIT);
+                return true;
+            }
+            @Override public void onLongPress(MotionEvent e) {
+                ClipboardManager cm = (ClipboardManager)
+                    getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasPrimaryClip()) {
+                    Toast.makeText(getContext(), "clipboard empty", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                ClipData clip = cm.getPrimaryClip();
+                if (clip == null || clip.getItemCount() == 0) return;
+                CharSequence text = clip.getItemAt(0).coerceToText(getContext());
+                if (text == null || keys == null) return;
+                int n = Math.min(text.length(), 4096);
+                for (int i = 0; i < n; i++) {
+                    char ch = text.charAt(i);
+                    if (ch == '\n') keys.onKey((byte) '\r');
+                    else if (ch < 128) keys.onKey((byte) ch);
+                }
+                Toast.makeText(getContext(), "pasted", Toast.LENGTH_SHORT).show();
+            }
+            @Override public boolean onDoubleTap(MotionEvent e) {
+                StringBuilder sb = new StringBuilder();
+                int start = Math.max(0, used - 200);
+                for (int i = start; i < used; i++) {
+                    int line = (head + i) % SCROLLBACK;
+                    sb.append(grid[line], 0, len[line]);
+                    sb.append('\n');
+                }
+                ClipboardManager cm = (ClipboardManager)
+                    getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("rvm", sb.toString()));
+                    Toast.makeText(getContext(), "copied", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+        });
     }
 
     public void setKeyListener(KeyListener l) { keys = l; }
@@ -79,8 +129,14 @@ public final class RvmView extends View {
                 newline();
             } else if (b == '\r') {
                 curCol = 0;
-            } else if (b == '\b') {
-                if (curCol > 0) curCol--;
+            } else if (b == '\b' || b == 127) {
+                if (curCol > 0) {
+                    curCol--;
+                    if (used > 0) {
+                        int line = (head + used - 1) % SCROLLBACK;
+                        if (curCol < len[line]) grid[line][curCol] = ' ';
+                    }
+                }
             } else if (b == '\t') {
                 curCol = ((curCol + 8) / 8) * 8;
                 if (curCol >= cols) newline();
@@ -223,10 +279,14 @@ public final class RvmView extends View {
             case KeyEvent.KEYCODE_DEL:        keys.onKey((byte) 127);  return true;
             case KeyEvent.KEYCODE_TAB:        keys.onKey((byte) '\t'); return true;
             case KeyEvent.KEYCODE_ESCAPE:     keys.onKey((byte) 27);   return true;
-            case KeyEvent.KEYCODE_DPAD_UP:    keys.onKey((byte) 0x1b); keys.onKey((byte) 'A'); return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:  keys.onKey((byte) 0x1b); keys.onKey((byte) 'B'); return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: keys.onKey((byte) 0x1b); keys.onKey((byte) 'C'); return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:  keys.onKey((byte) 0x1b); keys.onKey((byte) 'D'); return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                keys.onKey((byte) 0x1b); keys.onKey((byte) '['); keys.onKey((byte) 'A'); return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                keys.onKey((byte) 0x1b); keys.onKey((byte) '['); keys.onKey((byte) 'B'); return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                keys.onKey((byte) 0x1b); keys.onKey((byte) '['); keys.onKey((byte) 'C'); return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                keys.onKey((byte) 0x1b); keys.onKey((byte) '['); keys.onKey((byte) 'D'); return true;
             default: break;
         }
         int u = ev.getUnicodeChar();
@@ -239,20 +299,49 @@ public final class RvmView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo out) {
-        out.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
-        out.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
-        return new BaseInputConnection(this, false);
+        out.inputType = InputType.TYPE_CLASS_TEXT
+                      | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                      | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD;
+        out.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
+                       | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                       | EditorInfo.IME_ACTION_NONE;
+        return new BaseInputConnection(this, false) {
+            @Override
+            public boolean commitText(CharSequence text, int newCursorPosition) {
+                if (text != null) {
+                    int n = Math.min(text.length(), 512);
+                    for (int i = 0; i < n; i++) {
+                        char ch = text.charAt(i);
+                        if (keys == null) break;
+                        if (ch == '\n') keys.onKey((byte) '\r');
+                        else if (ch < 128) keys.onKey((byte) ch);
+                    }
+                }
+                return true;
+            }
+            @Override
+            public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+                if (keys != null)
+                    for (int i = 0; i < beforeLength; i++) keys.onKey((byte) 127);
+                return true;
+            }
+            @Override
+            public boolean sendKeyEvent(KeyEvent event) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN)
+                    return RvmView.this.onKeyDown(event.getKeyCode(), event);
+                return true;
+            }
+            @Override
+            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                return true;
+            }
+        };
     }
 
     /** A tap on the console raises the soft keyboard. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        if (e.getAction() == MotionEvent.ACTION_UP) {
-            requestFocus();
-            InputMethodManager imm =
-                (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
-        }
+        gestures.onTouchEvent(e);
         return true;
     }
 }

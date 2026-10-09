@@ -23,8 +23,8 @@ android {
         applicationId = "dev.rvm.app"
         minSdk = 26            // AAudio needs 26; that is also the audio floor
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.2.2"
+        versionCode = 10
+        versionName = "0.2.5"
 
         // Only the ABIs people actually run RISC-V guests on.  Shipping one
         // instead of four is the single biggest APK size win available.
