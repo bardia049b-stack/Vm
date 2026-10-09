@@ -45,7 +45,6 @@
 				#interrupt-cells = <1>;
 				interrupt-controller;
 				compatible = "riscv,cpu-intc";
-				phandle = <1>;
 			};
 		};
 	};
@@ -68,7 +67,7 @@
 			interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7>;
 		};
 
-		plic@c000000 {
+		plic: plic@c000000 {
 			compatible = "riscv,plic0";
 			reg = <0x0 0xc000000 0x0 0x4000000>;
 			#interrupt-cells = <1>;
@@ -76,7 +75,6 @@
 			interrupt-controller;
 			interrupts-extended = <&cpu0_intc 11 &cpu0_intc 9>;
 			riscv,ndev = <31>;
-			phandle = <2>;
 		};
 
 		serial@10000000 {

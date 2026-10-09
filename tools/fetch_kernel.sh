@@ -147,13 +147,17 @@ else
     done
 fi
 
-CAND="$(ls "$EX"/boot/vmlinux-* 2>/dev/null | sort -V | tail -1 || true)"
+newest() { # newest <glob-name> : highest version sort under $EX/boot
+    find "$EX/boot" -maxdepth 1 -type f -name "$1" 2>/dev/null | sort -V | tail -1
+}
+
+CAND="$(newest 'vmlinux-*')"
 if [ -n "$CAND" ]; then
-    log "found uncompressed ELF kernel: ${CAND#$EX}"
+    log "found uncompressed ELF kernel: ${CAND#"$EX"}"
     cp -f "$CAND" "$OUT"
-elif [ -n "$(ls "$EX"/boot/vmlinuz-* 2>/dev/null)" ]; then
-    CAND="$(ls "$EX"/boot/vmlinuz-* | sort -V | tail -1)"
-    log "package ships ${CAND#$EX}; trying to turn it into an ELF"
+elif [ -n "$(newest 'vmlinuz-*')" ]; then
+    CAND="$(newest 'vmlinuz-*')"
+    log "package ships ${CAND#"$EX"}; trying to turn it into an ELF"
     MAGIC="$(od -An -tx1 -N4 "$CAND" | tr -d ' ')"
     case "$MAGIC" in
         7f454c46) log "it is already an ELF"; cp -f "$CAND" "$OUT" ;;
@@ -195,7 +199,7 @@ PY
                   else
                       die "no python3 available to unpack the zboot stub"
                   fi ;;
-        *) die "unrecognised kernel image magic 0x$MAGIC in ${CAND#$EX}" ;;
+        *) die "unrecognised kernel image magic 0x$MAGIC in ${CAND#"$EX"}" ;;
     esac
 else
     die "the package contains no /boot/vmlinux-* or /boot/vmlinuz-*"
@@ -212,7 +216,7 @@ else
     log "warning: $OUT is not an ELF (magic 0x$MAGIC)"
 fi
 
-if [ "$KEEP_DEB" = 1 ] && [ "$ARCHIVE" != "${ARCHIVE#$WORK}" ]; then
+if [ "$KEEP_DEB" = 1 ] && [ "$ARCHIVE" != "${ARCHIVE#"$WORK"}" ]; then
     cp -f "$ARCHIVE" "./$(basename "$ARCHIVE")"
     log "kept ./$(basename "$ARCHIVE")"
 fi

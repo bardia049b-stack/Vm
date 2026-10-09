@@ -21,7 +21,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --debug)   MODE="debug"; shift ;;
         --release) MODE="release"; shift ;;
-        -j|--jobs) JOBS="$2"; shift 2 ;;
+        -j)        JOBS="$2"; shift 2 ;;
+        -j[0-9]*)  JOBS="${1#-j}"; shift ;;
+        --jobs)    JOBS="$2"; shift 2 ;;
+        --jobs=*)  JOBS="${1#--jobs=}"; shift ;;
         --no-werror) WERROR=0; shift ;;
         -h|--help) sed -n '3,12p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -58,5 +61,5 @@ else
     log "dtc not found; skipping dtb/rvm.dtb (the VM builds one in-process)"
 fi
 
-log "done: $(ls -l rvm | awk '{print $5}') bytes"
+log "done: $(wc -c < rvm | tr -d ' ') bytes"
 ./rvm --version

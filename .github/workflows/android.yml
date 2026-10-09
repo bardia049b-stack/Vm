@@ -42,15 +42,13 @@ jobs:
 
       - name: Set up the Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # v3 defaults to installing the retired `tools` package; list exactly
+          # what the build needs so sdkmanager does not fail on it.
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1'
 
-      - name: Install the NDK, CMake and the build tools
-        run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018" \
-            "cmake;3.22.1"
+      - name: Accept the SDK licences
+        run: yes | sdkmanager --licenses > /dev/null || true
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

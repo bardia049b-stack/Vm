@@ -91,7 +91,8 @@ log "rootfs directory: $ROOTDIR"
 # ---------------------------------------------------------------- debootstrap
 # --foreign only extracts and runs the first stage on the host; the second
 # stage runs inside the chroot where the riscv64 libc is already in place.
-if [ -f "$ROOTDIR/debootstrap/debootstrap.log" ] && [ -d "$ROOTDIR/usr/share/riscv64-linux" -o -x "$ROOTDIR/bin/sh" ]; then
+if [ -f "$ROOTDIR/debootstrap/debootstrap.log" ] &&
+   { [ -d "$ROOTDIR/usr/share/riscv64-linux" ] || [ -x "$ROOTDIR/bin/sh" ]; }; then
     log "first stage already present, skipping --first-stage"
 else
     log "debootstrap --arch=riscv64 --variant=minbase --foreign $SUITE"

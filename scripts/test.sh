@@ -23,7 +23,10 @@ while [ $# -gt 0 ]; do
         -v|--verbose) VERBOSE="-v"; shift ;;
         --lint)       LINT=1; shift ;;
         --coverage)   COVERAGE=1; shift ;;
-        -j|--jobs)    JOBS="$2"; shift 2 ;;
+        -j)           JOBS="$2"; shift 2 ;;
+        -j[0-9]*)     JOBS="${1#-j}"; shift ;;
+        --jobs)       JOBS="$2"; shift 2 ;;
+        --jobs=*)     JOBS="${1#--jobs=}"; shift ;;
         -h|--help)    sed -n '3,11p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
