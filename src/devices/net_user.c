@@ -1,3 +1,6 @@
+#ifndef SOCK_NONBLOCK
+#define SOCK_NONBLOCK 0
+#endif
 /*
 #include <stdlib.h>
  * net_user.c -- userspace NAT for virtio-net (works without TAP / on Android).
@@ -216,7 +219,7 @@ static void handle_udp(net_user *n, u32 dst, const u8 *udp, u32 len) {
     if (slot < 0) return;
     uconn *c = &n->udp[slot];
     if (!c->used) {
-        int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd < 0) return;
         c->used = true; c->fd = fd; c->gport = sp;
     }
@@ -264,7 +267,7 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
         memset(c, 0, sizeof(*c));
         c->used = true; c->fd = -1; c->gport = sp; c->rport = dp; c->rip = dst;
         c->gack = seq + 1; c->hseq = 1000; c->state = 1;
-        int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) { c->used = false; return; }
         c->fd = fd;
         struct sockaddr_in sa; memset(&sa, 0, sizeof(sa));
