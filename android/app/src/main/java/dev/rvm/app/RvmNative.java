@@ -25,9 +25,24 @@ public final class RvmNative {
 
     /* ---------------------------------------------------------- native API */
 
-    /** Creates a VM.  Returns an opaque handle, or 0 on failure. */
+    /**
+     * One line of RVM's own log.  level is the C rvm_loglevel: 0 trace,
+     * 1 debug, 2 info, 3 warn, 4 error.  Called on the VM thread.
+     */
+    public interface LogSink { void onLog(int level, String line); }
+
+    public static volatile LogSink logSink;
+
+    /** Entry point for rvm_jni.c; see proguard-rules.pro. */
+    static void onLog(int level, String line) {
+        LogSink s = logSink;
+        if (s != null) s.onLog(level, line);
+    }
+
+    /** Creates a VM.  debug turns RVM's own log on for this VM.
+     *  Returns an opaque handle, or 0 on failure. */
     public static native long vmCreate(String kernel, String disk, String initrd,
-                                       int ramMib, String bootargs, boolean trace);
+                                       int ramMib, String bootargs, boolean debug);
 
     /** Runs the VM on the calling thread until it stops.  Never call on the UI thread. */
     public static native int vmRun(long handle);

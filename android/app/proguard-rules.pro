@@ -15,6 +15,7 @@
     void onConsoleOutput(byte[], int);
     void onFrame(byte[], int, int, int);
     void onVmExit(int);
+    void onLog(int, java.lang.String);
 }
 
 # Custom Views inflated from XML need their (Context, AttributeSet) ctor.

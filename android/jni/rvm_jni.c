@@ -79,6 +79,28 @@ static int ring_poll(void *ud, u8 *dst, size_t max)
     return (int)avail;
 }
 
+/*
+ * rvm_log_fn: one line of RVM's own log to RvmNative.onLog(int, String).
+ * Without this the logs go to stderr, which on Android is /dev/null, and a
+ * boot that goes wrong says nothing at all.
+ */
+static void jni_log(void *ud, rvm_loglevel lvl, const char *line)
+{
+    session *s = ud;
+    JNIEnv *env = NULL;
+    if (s->onLog == NULL)
+        return;
+    if ((*s->jvm)->GetEnv(s->jvm, (void **)&env, JNI_VERSION_1_6) != JNI_OK || env == NULL)
+        return;
+    jstring js = (*env)->NewStringUTF(env, line);
+    if (js == NULL) {
+        (*env)->ExceptionClear(env);
+        return;
+    }
+    (*env)->CallStaticVoidMethod(env, s->cls, s->onLog, (jint)lvl, js);
+    (*env)->DeleteLocalRef(env, js);
+}
+
 /* --------------------------------------------------------------- session */
 
 typedef struct {
@@ -88,6 +110,7 @@ typedef struct {
     JavaVM *jvm;
     jclass cls;      /* global ref to dev.rvm.app.RvmNative */
     jmethodID onOutput;
+    jmethodID onLog;   /* NULL when the app did not ask for a debug log */
 
     /* Reused across calls so a chatty guest does not allocate per line. */
     jbyteArray scratch;
@@ -175,6 +198,10 @@ JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmCreate(
         free(s);
         return 0;
     }
+    s->onLog = (*env)->GetStaticMethodID(env, s->cls, "onLog", "(ILjava/lang/String;)V");
+    if (s->onLog == NULL)
+        (*env)->ExceptionClear(env); /* older Java side: logs stay off */
+
     s->onOutput = (*env)->GetStaticMethodID(env, s->cls, "onConsoleOutput", "([BI)V");
     if (s->onOutput == NULL) {
         LOGE("onConsoleOutput([BI)V not found -- is proguard keeping RvmNative?");
@@ -200,8 +227,17 @@ JNI_EXPORT jlong JNICALL Java_dev_rvm_app_RvmNative_vmCreate(
     o.dtb_path = NULL; /* always built in-process: dtc does not exist on-device */
     o.ram_size = (u64)(ramMib > 0 ? ramMib : 512) << 20;
     o.create_disk = false;
-    o.trace = trace ? true : false;
+    /*
+     * On Android the flag means "give me the log", not "give me the
+     * instruction trace": a full boot trace is gigabytes and would fill the
+     * phone's storage before it said anything useful.
+     */
+    o.trace = false;
     o.log_level = trace ? RVM_LOG_DEBUG : RVM_LOG_WARN;
+    if (trace && s->onLog != NULL)
+        rvm_log_set_sink(jni_log, s);
+    else
+        rvm_log_set_sink(NULL, NULL);
     o.write = jni_write;
     o.write_ud = s;
     o.poll = ring_poll;
@@ -265,6 +301,9 @@ JNI_EXPORT void JNICALL Java_dev_rvm_app_RvmNative_vmFree(JNIEnv *env, jclass cl
     free((void *)s->vm.opts.bootargs);
     if (s->scratch != NULL) (*env)->DeleteGlobalRef(env, s->scratch);
     if (s->cls != NULL) (*env)->DeleteGlobalRef(env, s->cls);
+    /* The log sink is process-global and the app runs one VM at a time, so
+     * dropping it here is what keeps it from calling into a freed session. */
+    rvm_log_set_sink(NULL, NULL);
     free(s);
 }
 

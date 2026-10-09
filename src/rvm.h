@@ -112,6 +112,14 @@ typedef enum {
 
 void rvm_log_set_level(rvm_loglevel lvl);
 rvm_loglevel rvm_log_get_level(void);
+
+/*
+ * Log sink.  Without one, logs go to stdout/stderr, which on Android is
+ * /dev/null; the JNI layer installs a sink that forwards every line to Java
+ * so the app can show its own log when a boot goes wrong.
+ */
+typedef void (*rvm_log_fn)(void *ud, rvm_loglevel lvl, const char *line);
+void rvm_log_set_sink(rvm_log_fn fn, void *ud);
 void rvm_log(rvm_loglevel lvl, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 void rvm_vlog(rvm_loglevel lvl, const char *fmt, va_list ap);
 

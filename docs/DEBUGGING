@@ -185,6 +185,26 @@ run loop refreshes mip every 256 instructions and immediately when a device
 raises a line, so a hang here means the line was never raised at all.
 
 
+The Android app
+---------------
+
+The app has a debug mode: hold the RVM title in the header. It persists across
+restarts, and with it on, every line of RVM's own log is written into the
+console above the guest output, tagged [rvm D] and friends. The guest console
+and the emulator log share one scrollback on purpose, because when a boot goes
+wrong the interesting part is where they meet.
+
+The log comes through rvm_log_set_sink(), which rvm_jni.c points at
+RvmNative.onLog(). Without a sink the same lines go to stderr, which on Android
+is /dev/null. Debug mode raises the level to DEBUG and also turns on the
+rate-limited trap line in the run loop: the first sixteen traps and then one in
+a million, with cause, tval, pc and the privilege the trap came from. A guest
+stuck in a fault loop is the commonest "nothing happens" report there is, and
+that one line is the whole diagnosis.
+
+Debug mode is logs, not an instruction trace. A full boot trace is gigabytes
+and would fill a phone before it said anything.
+
 Things that look like emulator bugs and are not
 -----------------------------------------------
 

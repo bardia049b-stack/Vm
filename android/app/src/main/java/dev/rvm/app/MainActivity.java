@@ -43,6 +43,7 @@ public final class MainActivity extends Activity {
     private volatile long vm;
     private volatile Thread vmThread;
     private volatile boolean sawOutput;
+    private boolean debug;
     private File kernel, disk;
 
     @Override
@@ -58,7 +59,24 @@ public final class MainActivity extends Activity {
         kernel = new File(getFilesDir(), "vmlinux");
         disk = new File(getFilesDir(), "disk.img");
 
+        debug = getSharedPreferences("rvm", MODE_PRIVATE).getBoolean("debug", false);
+        applyLogSink();
         applyInsets();
+
+        /* The one hidden gesture in the app, and the only way to get a log
+         * out of a phone without adb: hold the RVM title. */
+        findViewById(R.id.title).setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) {
+                debug = !debug;
+                getSharedPreferences("rvm", MODE_PRIVATE).edit()
+                    .putBoolean("debug", debug).apply();
+                applyLogSink();
+                toast(debug ? "debug log on: boot again and it will be captured"
+                            : "debug log off");
+                return true;
+            }
+        });
+
         wireKeys();
         wireToolbar();
 
@@ -103,11 +121,11 @@ public final class MainActivity extends Activity {
             banner("No kernel yet.\n\nTap 'Kernel' and pick a riscv64 kernel, either the "
                  + "ELF vmlinux or the PE/EFI Image that Debian ships as /boot/vmlinux-*, "
                  + "then 'Disk' and pick a Debian ext4 image built with tools/mkrootfs.sh, "
-                 + "then 'Boot'.");
+                 + "then 'Boot'.\n\nLong-press the RVM title for a debug log.");
         } else {
             banner("Ready.\n  kernel: " + human(kernel.length())
                  + (disk.exists() ? "\n  disk:   " + human(disk.length()) : "\n  disk:   (none)")
-                 + "\n\nTap 'Boot'.");
+                 + "\n\nTap 'Boot'.  Long-press the RVM title for a debug log.");
         }
     }
 
@@ -134,6 +152,24 @@ public final class MainActivity extends Activity {
                 return in;
             }
         });
+    }
+
+    /**
+     * RVM's own log, straight into the console above the guest output.  The
+     * guest console and the emulator log share one scrollback on purpose:
+     * when a boot goes wrong the interesting part is where they meet.
+     */
+    private void applyLogSink() {
+        RvmNative.logSink = debug ? new RvmNative.LogSink() {
+            @Override public void onLog(final int level, final String line) {
+                final char t = level <= 0 ? 'T' : level == 1 ? 'D' : level == 2 ? 'I'
+                                 : level == 3 ? 'W' : 'E';
+                final byte[] b = ("[rvm " + t + "] " + line + "\n").getBytes();
+                ui.post(new Runnable() {
+                    @Override public void run() { console.write(b, b.length); }
+                });
+            }
+        } : null;
     }
 
     /* -------------------------------------------------------------- wiring */
@@ -192,7 +228,7 @@ public final class MainActivity extends Activity {
 
         console.clear();
         sawOutput = false;
-        status.setText("starting…");
+        status.setText(debug ? "starting, debug log on…" : "starting…");
         ui.postDelayed(new Runnable() {
             @Override public void run() {
                 if (vm != 0 && !sawOutput) {
@@ -206,7 +242,7 @@ public final class MainActivity extends Activity {
 
         vmThread = new Thread(new Runnable() {
             @Override public void run() {
-                long h = RvmNative.vmCreate(k, d, null, 512, bootargs, false);
+                long h = RvmNative.vmCreate(k, d, null, 512, bootargs, debug);
                 if (h == 0) {
                     ui.post(new Runnable() {
                         @Override public void run() {
@@ -320,6 +356,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopVm();
+        RvmNative.logSink = null;
         RvmNative.consoleSink = null;
         RvmNative.frameSink = null;
         RvmNative.exitSink = null;

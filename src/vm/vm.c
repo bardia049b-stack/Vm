@@ -357,6 +357,21 @@ rvm_err vm_run(vm *v) {
         case STEP_TRAP: {
             u64 cause = v->cpu.last_cause;
             bool is_irq = (cause >> 63) & 1;
+            /*
+             * A guest stuck in a fault loop is the commonest "nothing
+             * happens" report there is, and cause/tval/pc is the whole
+             * diagnosis.  Log the first sixteen and then one in a million,
+             * so the loop is visible without drowning the sink.  DEBUG only:
+             * at INFO and above this costs a counter increment.
+             */
+            if (v->trap_log < 16 || (v->trap_log & 0xFFFFFu) == 0) {
+                LOG_DEBUG("vm: trap %llu cause=%llu tval=0x%llx pc=0x%llx from priv=%u",
+                          (unsigned long long)v->trap_log,
+                          (unsigned long long)(cause & 0x3F),
+                          (unsigned long long)v->cpu.last_tval,
+                          (unsigned long long)v->cpu.pc, v->cpu.last_from_priv);
+            }
+            v->trap_log++;
             if (!is_irq && (cause & 0x3F) == EXC_ECALL_S && v->cpu.last_from_priv == PRV_S) {
                 if (!sbi_handle(&v->sbi, &v->cpu))
                     goto done;

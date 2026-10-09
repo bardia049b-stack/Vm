@@ -304,19 +304,25 @@ rvm_err loader_load_pe(bus *b, const char *path, u64 base, u64 *entry, loader_st
         st->highest = base + span_end;
     }
     /*
-     * Enter at the first byte of .text, not at base.  Offset 0 of the file is
-     * the DOS header whose first instruction only exists to make the image a
-     * valid PE; the kernel's own _head is the start of the first section.
-     * Entering at 0 executes header bytes as instructions, leaves ra unset and
-     * ends in a c.jr ra into a zero page some millions of instructions later.
+     * Enter at base, i.e. at the DOS header itself.  That is not a paradox:
+     * head.S starts with
+     *
+     *     c.li s4, -13      # decodes to the ASCII "MZ" UEFI requires
+     *     j   _start_kernel
+     *
+     * and in the PE layout everything between that and the first section is
+     * the EFI header, so _start_kernel lands a few KB into .text.  Entering at
+     * the first section instead starts execution inside relocate_enable_mmu,
+     * which writes satp from a trampoline table setup_vm never filled and
+     * spins in a page-fault loop at its own 1: label.
      */
     if (entry)
-        *entry = base + min_va;
+        *entry = base;
 
     LOG_INFO("loader: %s is a PE32+ EFI-stub Image: %u sections, %llu byte image "
              "at 0x%llx, entry 0x%llx",
              path, nsec, (unsigned long long)(image_size ? image_size : span_end),
-             (unsigned long long)base, (unsigned long long)(base + min_va));
+             (unsigned long long)base, (unsigned long long)base);
     e = RVM_OK;
 
 done:

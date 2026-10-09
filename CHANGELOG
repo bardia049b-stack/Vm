@@ -32,6 +32,19 @@ it starves the UI thread on a phone's few cores, which reads as the whole app
 freezing. A delayed note in the status line now says so when the guest has
 produced no output after eight seconds.
 
+The Android app has a debug mode: hold the RVM title and every line of RVM's
+own log goes into the console above the guest output. The log reaches Java
+through a new rvm_log_set_sink() hook, because stderr is /dev/null on Android.
+The run loop also logs the first sixteen traps and then one in a million with
+cause, tval, pc and privilege, which is the whole diagnosis for a guest stuck
+in a fault loop.
+
+The PE loader enters the image at offset 0, not at the first section. head.S
+begins with c.li s4,-13, whose encoding is the ASCII "MZ" UEFI requires,
+followed by a jump to _start_kernel; the first section begins at
+relocate_enable_mmu, and entering there writes satp from a trampoline table
+setup_vm never filled and spins in a page-fault loop at its own 1: label.
+
 tools/fetch_kernel.sh built linux-image-age-6.12.107+deb13-riscv64 because
 substr($2, 9) strips four characters too few from linux-image-. The awk now
 prints the package name as it appears in the index.

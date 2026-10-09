@@ -30,6 +30,13 @@ const char *rvm_strerror(rvm_err e) {
 /* ----------------------------------------------------------------- logging */
 
 static rvm_loglevel g_level = RVM_LOG_INFO;
+static rvm_log_fn g_log_fn;
+static void *g_log_ud;
+
+void rvm_log_set_sink(rvm_log_fn fn, void *ud) {
+    g_log_fn = fn;
+    g_log_ud = ud;
+}
 static rvm_trace_fn g_trace_fn;
 static void *g_trace_ud;
 static u64 g_trace_from;
@@ -62,10 +69,15 @@ static const char *level_name(rvm_loglevel l) {
 void rvm_vlog(rvm_loglevel lvl, const char *fmt, va_list ap) {
     if (lvl < g_level || fmt == NULL)
         return;
+    char buf[512];
+    if (vsnprintf(buf, sizeof buf, fmt, ap) < 0)
+        return;
+    if (g_log_fn) {
+        g_log_fn(g_log_ud, lvl, buf);
+        return;
+    }
     FILE *out = (lvl >= RVM_LOG_WARN) ? stderr : stdout;
-    fprintf(out, "[%s] ", level_name(lvl));
-    vfprintf(out, fmt, ap);
-    fputc('\n', out);
+    fprintf(out, "[%s] %s\n", level_name(lvl), buf);
     fflush(out);
 }
 

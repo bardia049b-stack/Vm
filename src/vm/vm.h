@@ -84,6 +84,7 @@ typedef struct vm {
     bool irq_dirty;
     u32 exit_code;
     u64 insns;
+    u64 trap_log; /* traps seen, for the rate-limited trap diagnostic */
     u64 start_ns;
 
     /* Line-buffered console sink state */
