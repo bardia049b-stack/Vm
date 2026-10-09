@@ -1,0 +1,83 @@
+# Two gates: the sources must be clang-format clean, and they must compile with
+# every warning treated as an error.
+#
+# clang-format is pinned through npm because formatting output differs between
+# LLVM majors; this is the same 15.0.0 binary used to format the tree.
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install the pinned clang-format
+        run: npm install --no-save --no-audit --no-fund clang-format@1.8.0
+
+      - name: Check formatting
+        run: |
+          FILES=$(find src tests -name '*.c' -o -name '*.h' | sort)
+          echo "checking $(echo "$FILES" | wc -l) files with $(npx clang-format --version)"
+          npx clang-format --dry-run --Werror $FILES
+
+      - name: Upload a patch on failure
+        if: failure()
+        run: |
+          FILES=$(find src tests -name '*.c' -o -name '*.h' | sort)
+          for f in $FILES; do npx clang-format "$f" > "$f.fmt"; done
+          git diff --no-index -- '*.c' '*.c.fmt' > format.patch || true
+          echo "see the format.patch artefact for the required changes"
+
+  warnings:
+    name: -Werror (gcc + clang)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc-14, clang-18]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ${{ matrix.cc }}
+
+      - name: Syntax pass with -Werror
+        run: make CC=${{ matrix.cc }} lint
+
+      - name: Full build with -Werror
+        run: make CC=${{ matrix.cc }} -j"$(nproc)" WERROR=1
+
+  shell:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Check the scripts
+        run: shellcheck -x tools/*.sh scripts/*.sh

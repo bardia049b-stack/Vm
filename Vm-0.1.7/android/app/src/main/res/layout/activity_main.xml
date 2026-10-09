@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+
+  One vertical LinearLayout.  A dark header carries the name and the status so
+  the status bar reads as part of the app instead of as a seam; the console
+  takes all spare space; the helper keys scroll sideways so a landscape phone
+  never clips them.  No ConstraintLayout, no nesting beyond the one scroll.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paper">
+
+    <!-- Header.  Its top padding is set from the window insets in code so the
+         ink runs under the status bar. -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/ink"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="0dp"
+        android:paddingBottom="10dp"
+        android:minHeight="52dp">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_title"
+            android:textColor="@color/on_ink"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.12" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:gravity="end"
+            android:textColor="@color/on_ink_soft"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:text="@string/idle" />
+    </LinearLayout>
+
+    <!-- Toolbar: four flat buttons on paper. -->
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@color/paper"
+        android:paddingStart="5dp"
+        android:paddingEnd="5dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp">
+
+        <Button android:id="@+id/btn_boot"
+            style="@style/RvmButton"
+            android:text="@string/boot" />
+        <Button android:id="@+id/btn_stop"
+            style="@style/RvmButton"
+            android:text="@string/stop" />
+        <Button android:id="@+id/btn_kernel"
+            style="@style/RvmButton"
+            android:text="@string/kernel" />
+        <Button android:id="@+id/btn_disk"
+            style="@style/RvmButton"
+            android:text="@string/disk" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/rule" />
+
+    <!-- The guest framebuffer.  GONE until virtio-gpu produces a scanout, so
+         the console owns the whole screen until something needs the pixels. -->
+    <dev.rvm.app.GfxView
+        android:id="@+id/gfx"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone" />
+
+    <!-- The serial console. -->
+    <dev.rvm.app.RvmView
+        android:id="@+id/console"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/rule" />
+
+    <!-- Helper keys.  Sideways scrollable: nine keys do not fit a landscape
+         phone and clipping them is worse than scrolling. -->
+    <HorizontalScrollView
+        android:id="@+id/keyscroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/paper_dark"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        android:overScrollMode="never">
+
+        <dev.rvm.app.KeyBar
+            android:id="@+id/keys"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </HorizontalScrollView>
+
+</LinearLayout>

@@ -1,0 +1,220 @@
+	Debugging
+
+Levels and counters
+-------------------
+
+	./rvm -v			debug logging
+	./rvm -q			warnings and errors only
+	./rvm --stats			counters on exit
+
+--stats prints instructions retired, wall time, throughput in MIPS, trap
+counts split into ecalls, SBI calls and unsupported SBI calls, RAM and MMIO
+load and store counts with fault counts, TLB hit, miss and walk counts, and
+UART transmit and receive counts. Read it before optimising anything. A TLB
+walk count that tracks the instruction count means the guest is running with
+translation on and missing every time.
+
+Build with MODE=debug when the disassembly has to line up with the source:
+
+	make MODE=debug -j"$(nproc)"
+
+
+The instruction trace
+---------------------
+
+--trace logs every retired instruction with its PC, encoding, privilege level
+and satp. On a real boot that is gigabytes, which is why nobody uses it.
+
+RVM_TRACE_FROM, or --trace-from on the command line, opens the gate at one
+guest PC. Everything before it is dropped and everything from it on is logged:
+
+	RVM_TRACE_FROM=0x80200000 ./rvm -k vmlinux -d disk.img
+	./tools/run.sh --trace-from 0x80200000
+
+The format is
+
+	000080200abc: 00b50533  priv=1 satp=8000000080002000
+
+A 16 bit encoding is padded so the columns line up. Both forms imply --trace
+and raise the log level, so you do not have to pass them separately.
+
+
+pc = 0xfffffffffffffffe
+-----------------------
+
+The guest jumped to data. -2 is what a jalr or a corrupted return address gives
+you when it lands two bytes below zero, and it always means the emulator
+retired something the guest never intended as code. Usually a decode bug that
+got the instruction length wrong, or a trap path that wrote epc from a stale
+npc.
+
+Work it in this order.
+
+1. Find how far it gets. Run with -n and bisect:
+
+	./rvm -k vmlinux -d disk.img -n 1000000 --stats
+	./rvm -k vmlinux -d disk.img -n 10000000 --stats
+
+	The last -n that still prints sane output bounds the failure.
+
+2. Trace the tail of it. Take a PC a few thousand instructions before the
+   failure and open the gate there:
+
+	RVM_TRACE_FROM=0x8021abcd ./rvm -k vmlinux -d disk.img > /tmp/t.log
+
+   The last few lines of /tmp/t.log are the interesting ones.
+
+3. Read the last retired instruction. If its length is wrong, the PC after it
+   is wrong, and that is the bug. Check the encoding against the spec by hand;
+   a compressed instruction that was treated as 32 bit is the common case.
+
+4. Resolve the address in the guest:
+
+	objdump -d vmlinux --start-address=0x8021ab00 \
+		--stop-address=0x8021ac00
+	addr2line -e vmlinux -f -C 0x8021abcd
+
+   If addr2line names something that is not code, the guest really did jump
+   into data and the fault is in the emulator's control flow, not in the
+   decoding.
+
+5. If the trace shows a trap instead, look at cause and tval. The trap path
+   writes epc from npc, and mret and sret have to have their result copied
+   into npc or the return address is stale by one instruction.
+
+Every decode and trap bug found so far came out of this recipe.
+
+
+Debugging the emulator itself
+-----------------------------
+
+	make MODE=debug -j"$(nproc)"
+	gdb --args ./rvm -k vmlinux -d disk.img
+	./tools/run.sh --gdb
+
+Useful breakpoints are cpu_step, cpu_exec32, cpu_trap, mmu_translate and
+bus_load. break cpu_trap if c->last_cause == 12 catches a guest page fault.
+
+Note that gdb steps the emulator, not the guest. There is no guest stub.
+
+
+Sanitizers
+----------
+
+	make MODE=sanity test TEST_ARGS=-v
+
+That is ASan and UBSan at -O1 with the runtime linked in. CI runs it with
+
+	ASAN_OPTIONS=detect_leaks=1:abort_on_error=0
+	UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
+
+and it has found real bugs, including signed overflow in addw and subw and a
+left shift of a negative value in sext(). Both are undefined in C and defined
+in RISC-V, which is the combination that produces silently wrong results on
+one compiler and crashes on another.
+
+Run the guest under the sanitizers too, not just the tests:
+
+	make MODE=sanity -j"$(nproc)"
+	./rvm -k vmlinux -d disk.img -n 10000000
+
+
+A standalone reproducer
+-----------------------
+
+The harness is a library, so a single failing case can be driven from its own
+file without the whole suite:
+
+	cat > /tmp/dbg.c <<'EOF'
+	#include "fixtures/harness.h"
+	#include "test.h"
+	int main(void) {
+	    th t;
+	    th_init(&t);
+	    th_emit(&t, ADDI(X_A0, X_ZERO, 1));
+	    th_run_all(&t);
+	    printf("x10 = %llx pc = %llx\n",
+	           (unsigned long long)t.cpu.x[X_A0],
+	           (unsigned long long)t.cpu.pc);
+	    th_free(&t);
+	    return 0;
+	}
+	EOF
+
+	cc -std=c11 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -O0 -g \
+		-Isrc -Itests -o /tmp/dbg /tmp/dbg.c \
+		build/tests/fixtures/harness.o build/librvm.a -lm
+
+Run make test first so build/librvm.a exists. Under gdb this is much faster
+than rebuilding the suite for every attempt.
+
+For FDT problems there is a second trick: dump the blob and walk it outside the
+emulator.
+
+	./rvm --dump-dtb /tmp/rvm.dtb
+	dtc -I dtb -O dts /tmp/rvm.dtb
+
+If dtc can read it, the blob is well formed and the bug is in what the guest
+does with it. If dtc cannot, the bug is in src/loader/fdt.c.
+
+
+Device problems
+---------------
+
+virtio is the usual suspect. Turn on debug logging and watch the transport:
+
+	./rvm -v -k vmlinux -d disk.img
+
+Things worth checking by hand. The guest read MagicValue as 0x74726976 and
+Version as 2. DeviceID is non zero for the slot the guest probed. QueueNumMax
+was returned before the guest wrote QueueNum. The descriptor chain is walked in
+the right direction: data is readable for T_OUT and carries VRING_WRITE for
+T_IN, and the last descriptor is one writable status byte. The used ring len
+counts every device written byte including the status byte.
+
+An empty slot has to decode as no device present, meaning DeviceID reads 0. If
+it faults instead, the guest probe dies and nothing after it works.
+
+For interrupts, check that the device's IRQ number in the DTB matches
+RVM_VIRTIO_IRQ(slot), and that plic_update() actually reports the source. The
+guest masking it through sstatus or sie is a guest problem, not an emulator
+one.
+
+If the guest hangs in wfi, the interrupt it is waiting for never arrived. The
+run loop refreshes mip every 256 instructions and immediately when a device
+raises a line, so a hang here means the line was never raised at all.
+
+
+The Android app
+---------------
+
+The app has a debug mode: hold the RVM title in the header. It persists across
+restarts, and with it on, every line of RVM's own log is written into the
+console above the guest output, tagged [rvm D] and friends. The guest console
+and the emulator log share one scrollback on purpose, because when a boot goes
+wrong the interesting part is where they meet.
+
+The log comes through rvm_log_set_sink(), which rvm_jni.c points at
+RvmNative.onLog(). Without a sink the same lines go to stderr, which on Android
+is /dev/null. Debug mode raises the level to DEBUG and also turns on the
+rate-limited trap line in the run loop: the first sixteen traps and then one in
+a million, with cause, tval, pc and the privilege the trap came from. A guest
+stuck in a fault loop is the commonest "nothing happens" report there is, and
+that one line is the whole diagnosis.
+
+Debug mode is logs, not an instruction trace. A full boot trace is gigabytes
+and would fill a phone before it said anything.
+
+Things that look like emulator bugs and are not
+-----------------------------------------------
+
+An all zero register file after a test block. th_run_all() does not stop on
+STEP_TRAP, so the guest trapped and looped. Check last_cause.
+
+Wrong results only for negative immediates. th_li() zero extends to 32 bits.
+
+A test that passes locally and fails in CI. Check whether it depends on
+uninitialised memory or on host timing, and run it under MODE=sanity.
+
+No output at all from the test binary. It crashed and stdout was buffered. Use
+stdbuf -o0 -e0.

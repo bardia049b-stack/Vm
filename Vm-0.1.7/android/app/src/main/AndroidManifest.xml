@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+
+  No AndroidX, no Material, no Compose: this manifest references only framework
+  classes.  The theme is a plain DeviceDefault one so the app does not have to
+  drag in appcompat-resources (which alone is ~1.5 MB of the APK).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- INTERNET and ACCESS_NETWORK_STATE are what the guest's virtio-net
+         socket is opened with once PLAN step 9 lands; ACCESS_NETWORK_STATE
+         only so the UI can say "offline" instead of timing out silently.
+         Neither is a dangerous permission, so neither prompts. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Declared now so the VM can be moved to a foreground service without a
+         manifest change; there is no <service> element yet.  The guest disk
+         image lives in filesDir, not in the APK, so install location is not
+         what this is for. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- A keyboard and a touchscreen are both optional: RVM drives everything
+         through the on-screen helper keys. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.audio.output" android:required="false" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/RvmTheme"
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:supportsRtl="false"
+        android:largeHeap="false"
+        android:resizeableActivity="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:screenOrientation="fullSensor">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+    </application>
+</manifest>

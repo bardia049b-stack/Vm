@@ -1,0 +1,151 @@
+	Changelog
+
+Newest first. Tagging v* is what fires .github/workflows/release.yml.
+
+
+unreleased
+----------
+
+The kernel loader handles the format Debian actually ships. Debian's riscv64
+/boot/vmlinux-* is not an ELF: the EFI stub wraps the boot Image as a PE32+
+executable, so the file starts with MZ and carries COFF sections. loader_sniff
+picks ELF, PE or raw blob from the first bytes, and loader_load_pe maps the
+sections and enters at the start of .text, because offset 0 is the DOS header
+and executing it leaves ra unset. Verified against linux-image-6.12.107 from
+deb.debian.org: the image loads and executes its own head code up to the satp
+write. Full boot is still open, see PLAN step 8.
+
+vm_new sets medeleg and mideleg to the OpenSBI defaults. A kernel entered in
+S-mode with medeleg zero sends every page fault to M-mode, where nothing
+handles it. That is a firmware duty, not a kernel bug.
+
+The Android screen is redrawn. A dark ink header carries the name and the
+status and runs under the status bar, so the clock no longer sits on top of the
+Boot button. The four actions are flat 44dp buttons with a hairline face and
+the framework ripple. The console respects its padding, gets line spacing and a
+blinking block cursor. The helper keys scroll sideways instead of being clipped
+on a landscape phone. Still no AndroidX, no Material and no bitmaps: the faces
+are shape drawables and the only animation is the cursor.
+
+The VM thread runs at NORM priority instead of MAX. It never blocks, and at MAX
+it starves the UI thread on a phone's few cores, which reads as the whole app
+freezing. A delayed note in the status line now says so when the guest has
+produced no output after eight seconds.
+
+The Android app has a debug mode: hold the RVM title and every line of RVM's
+own log goes into the console above the guest output. The log reaches Java
+through a new rvm_log_set_sink() hook, because stderr is /dev/null on Android.
+The run loop also logs the first sixteen traps and then one in a million with
+cause, tval, pc and privilege, which is the whole diagnosis for a guest stuck
+in a fault loop.
+
+The PE loader enters the image at offset 0, not at the first section. head.S
+begins with c.li s4,-13, whose encoding is the ASCII "MZ" UEFI requires,
+followed by a jump to _start_kernel; the first section begins at
+relocate_enable_mmu, and entering there writes satp from a trampoline table
+setup_vm never filled and spins in a page-fault loop at its own 1: label.
+
+tools/fetch_kernel.sh built linux-image-age-6.12.107+deb13-riscv64 because
+substr($2, 9) strips four characters too few from linux-image-. The awk now
+prints the package name as it appears in the index.
+
+
+0.1.0
+-----
+
+The first version that boots a bare metal guest, passes its own test suite and
+builds an installable APK in CI.
+
+The emulator. RV64IMAFDC in C11 with no dependencies beyond libc and libm.
+src/cpu has the core, the CSR file, the trap path and the FP unit. src/mmu does
+Sv39, Sv48 and Sv57 with superpages and a direct mapped TLB. src/bus is a flat
+sorted region table. src/devices has an ns16550a UART, a CLINT driven by the
+host clock, a PLIC, the virtio-mmio transport with a split virtqueue, and
+virtio-blk. src/loader reads ELF64 and raw blobs and builds the FDT in C.
+src/vm assembles the machine, runs the loop and implements the SBI calls.
+
+Tests. 31 suites and 585 assertions against a harness that builds a real bus,
+MMU, CPU, CLINT, PLIC and UART and emits guest instructions into it.
+
+Android. One Activity, three custom Views, no third party dependencies at all.
+The debug APK is 176 KB and the release APK 152 KB.
+The VM runs on its own thread; input reaches it through a lock free ring and
+vm.running is atomic. The release APK is 65 KB.
+
+Build. A plain GNU Makefile with MODE=release|debug|sanity, WERROR=1 and
+TEST_ARGS. scripts/build.sh, scripts/test.sh and scripts/clean.sh wrap it.
+tools/mkrootfs.sh, tools/fetch_kernel.sh and tools/run.sh build and boot a
+Debian guest. Five GitHub Actions workflows: build, test, lint, android and
+release.
+
+Tracing. RVM_TRACE_FROM and --trace-from open the instruction trace at one
+guest PC and drop everything before it.
+
+Fixes worth recording, because each one is easy to walk into again.
+
+CSR_TIME read as zero. clint_tick() advances mtime and returns the MSIP and
+MTIP bits it drives. vm_run() and the test harness both assigned that return
+value to cpu.hw_time, which csr.c serves for CSR_TIME, so rdtime returned
+interrupt bits instead of mtime. The Linux riscv clocksource is rdtime. The
+harness had a second copy of the same mistake and also dropped MSIP.
+
+The run loop did 385 ns per instruction. Two things ran on every retired
+instruction and neither needed to. pump_input() is a read() syscall on stdin
+and the clint refresh is a clock_gettime(). Both are now done every 256
+instructions and immediately whenever a device moves an interrupt line. Separately,
+best_source() scanned all 64 PLIC sources twice per refresh to answer what is
+almost always no source. Together: 2.60 MIPS to 32.39 MIPS on a 20 million
+instruction nop loop.
+
+--stats reported throughput 1000 times too low. It computed instructions per
+nanosecond and called the result MIPS.
+
+Signed overflow in addw, subw, addiw and mul. RISC-V specifies a wrap, C
+specifies undefined behaviour. These now compute in the matching unsigned type.
+Found by the sanitizers job.
+
+sext() and imm_clui() shifted negative signed values left. Found by UBSan.
+
+The ELF builder's PUT16, PUT32 and PUT64 macros shifted the caller's
+expression, so PUT64(40, 0) shifted a 32 bit int by 32. Found by UBSan.
+
+make coverage had clean as a prerequisite, which under -j deletes build/ while
+parallel compiles are writing into it. It now runs two sequential sub-makes.
+
+scripts/*.sh only accepted -j 4, so CI's -j"$(nproc)" was rejected as an
+unknown option.
+
+dtb/rvm.dts referenced &plic on a node that carried only a hand written phandle
+property, which dtc rejects.
+
+android/settings.gradle.kts declared plugin repositories but no project
+repositories, so AGP could not resolve its own aapt2.
+
+android-actions/setup-android@v3 installs the retired tools package by default
+and fails without an explicit package list.
+
+No Java source was in the repository at all. .gitignore had an unanchored rvm
+pattern, meant for the ./rvm binary at the root, which also matched
+android/app/src/main/java/dev/rvm/app/. Gradle reported
+compileJavaWithJavac NO-SOURCE, dexed the generated R classes and produced an
+APK that installs and then dies with ClassNotFoundException. The release build
+was worse: with no code to keep, R8 produced an empty dex that AGP omitted, and
+resource shrinking then removed everything the missing code referenced. Both
+workflows now assert that classes.dex exists, that both ABIs carry
+librvm_jni.so, and that all five classes survived shrinking with their names.
+The patterns are anchored.
+
+KeyBar called add() on itself. It extends LinearLayout, whose method is
+addView(). This was the only compile error in 890 lines of Java, and it was
+found by CI because the Java had never been in front of a compiler before.
+
+android:extractNativeLibs was set in the manifest as well as derived by AGP
+from packaging.jniLibs.useLegacyPackaging, which warns.
+
+The Android manifest declared an ACTION_VIEW filter for octet-stream that
+nothing handled, and an octet-stream URI cannot say whether it is a kernel or a
+disk image. Removed. Kernels and images enter through ACTION_OPEN_DOCUMENT,
+where the user picks the file.
+
+make lint is -fsyntax-only and so never saw two warnings that only appear once
+gcc folds constants at -O2. scripts/test.sh grew --werror, which CI uses.

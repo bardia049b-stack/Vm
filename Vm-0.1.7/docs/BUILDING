@@ -1,0 +1,267 @@
+	Building
+
+Requirements
+------------
+
+The emulator needs a C11 compiler and GNU make. Nothing else.
+
+	gcc or clang	./rvm and make test. CI uses gcc-13, gcc-14, clang-18
+			and Apple clang.
+	GNU make	everything
+	dtc		make dtb only
+	clang-format	make format and the lint workflow. LLVM 15.0.0.
+	shellcheck	the lint workflow
+	lcov		make coverage
+	JDK 17		the APK
+	Android SDK	the APK. Platform 35, build tools 35.0.0,
+			NDK 27.2.12479018, CMake 3.22.1.
+	Gradle 8.11.1	the APK
+	debootstrap,	the Debian rootfs. Needs root and a Debian
+	qemu-user-	 or Ubuntu host.
+	static, e2fsprogs
+
+Debian or Ubuntu:
+
+	sudo apt-get install -y build-essential device-tree-compiler \
+		shellcheck lcov
+
+macOS:
+
+	brew install make dtc shellcheck lcov llvm
+
+
+The desktop build
+-----------------
+
+	make -j"$(nproc)"
+	./rvm --help
+
+That is all of it. ./rvm is about 295 KB in release mode and links only libc
+and libm.
+
+./scripts/build.sh does the same thing and also builds the DTB if dtc is
+installed, then reports the binary size:
+
+	./scripts/build.sh
+	./scripts/build.sh --debug
+	./scripts/build.sh --jobs 4
+
+
+Modes
+-----
+
+MODE picks the optimisation and instrumentation level. Switching modes stamps
+build/.mode and cleans automatically, because reusing objects from a different
+mode is silent and confusing.
+
+	release	default. -O2 -g. What CI ships.
+	debug	-O0 -g3 -DRVM_DEBUG. For gdb and --trace.
+	sanity	-O1 -g -fsanitize=address,undefined.
+
+	make MODE=debug -j"$(nproc)"
+	make MODE=sanity test TEST_ARGS=-v
+
+Variables:
+
+	CC		gcc by default. CI does make CC=clang-18.
+	WERROR		WERROR=1 adds -Werror to every build, not just lint.
+	TEST_ARGS	passed to the test runner, for example TEST_ARGS=-v.
+	OPT		overrides the optimisation flags outright.
+	EXTRA_CFLAGS	appended last, so it can override -O.
+	EXTRA_LDFLAGS	same, at link time.
+
+These are make variables, not options. make WERROR=1, never make -DWERROR=1.
+Likewise make test TEST_ARGS=-v, never make test -v.
+
+
+Targets
+-------
+
+	all	./rvm, the default
+	test	build and run the suite
+	lint	-Werror syntax pass over src and tests
+	format	clang-format -i over the whole tree
+	dtb	dtc -I dts -O dtb dtb/rvm.dts
+	coverage clean rebuild with --coverage, then run the suite
+	lib	build/librvm.a, the core without main.c
+	run	./rvm -m 256 -k vmlinux -d disk.img --create-disk --stats
+	clean	remove build/, ./rvm and the test binary
+	help	print the target and variable list
+
+make lint is -fsyntax-only. It is fast and it does not see warnings that only
+appear once the compiler folds constants at -O2. Build the suite optimised with
+-Werror as well:
+
+	./scripts/test.sh --werror -v
+	WERROR=1 ./scripts/test.sh
+
+
+Tests
+-----
+
+	make test
+	make test TEST_ARGS=-v
+	stdbuf -o0 -e0 ./tests/rvm_tests -v
+
+The stdbuf matters when a test crashes. Without it a SIGFPE or SIGSEGV loses
+everything still in the stdout buffer and you get an empty log instead of the
+name of the suite that died.
+
+Coverage, if lcov is installed:
+
+	./scripts/test.sh --coverage
+	lcov --summary build/coverage.info
+
+
+The device tree
+---------------
+
+rvm builds its FDT in C at boot, so it needs no external DTB. dtb/rvm.dts is
+the same tree written out by hand, for reading and for diffing.
+
+	make dtb
+	./rvm --dump-dtb /tmp/generated.dtb
+	dtc -I dtb -O dts /tmp/generated.dtb > /tmp/a
+	dtc -I dtb -O dts dtb/rvm.dtb        > /tmp/b
+	diff /tmp/a /tmp/b
+
+That diff has to be empty.
+
+Two rules for editing rvm.dts. Give interrupt controllers real labels, so
+plic: plic@c000000, because dtc rejects a &plic reference to a node it cannot
+label. And never write phandle = <N> by hand; dtc allocates them and rejects a
+reference to a node whose phandle it did not assign.
+
+
+A Debian guest
+--------------
+
+This is PLAN step 8. It needs root, about 2 GB of free memory and a route to
+deb.debian.org, so it does not work in a restricted container and CI does not
+attempt it.
+
+	sudo ./tools/mkrootfs.sh --suite trixie --size 2G --out disk.img
+	./tools/fetch_kernel.sh --out vmlinux
+	./tools/run.sh
+
+mkrootfs.sh installs debootstrap, qemu-user-static and e2fsprogs if they are
+missing, runs debootstrap --arch=riscv64 --variant=minbase trixie under a
+qemu-user-static chroot with --second-stage, swaps systemd for sysvinit-core,
+sets a root password, writes an inittab with a ttyS0 getty and an fstab for
+/dev/vda, /proc and /sys, then packs the tree into an ext4 image with
+mke2fs -d.
+
+fetch_kernel.sh downloads linux-image-6.12+deb13-riscv64 from the Debian pool
+and extracts the uncompressed ELF vmlinux. The loader wants real ELF64 with
+PT_LOAD segments, not a compressed Image and not an EFI zboot stub. Pass
+--version 6.12.57-1 for an exact package.
+
+Success is a login prompt:
+
+	Debian GNU/Linux 13 rvm ttyS0
+
+	rvm login:
+
+tools/run.sh boots it. --net also sets up the TAP device, forwarding and NAT,
+but it needs a build with virtio-net, which does not exist yet. --gdb runs the
+emulator itself under gdb. --trace-from opens the instruction trace at a guest
+PC. All three scripts document themselves with --help.
+
+
+The Android APK
+---------------
+
+	cd android
+	gradle --no-daemon assembleDebug
+	adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+There is no gradle-wrapper.jar in this repository, so ./gradlew does not exist.
+Use a Gradle 8.11.1 on your PATH, or let CI build it; gradle/actions/setup-gradle
+installs the version named in gradle/wrapper/gradle-wrapper.properties.
+
+	sdk install gradle 8.11.1
+
+The SDK packages the build needs, in one go:
+
+	sdkmanager --install "platform-tools" "platforms;android-35" \
+		"build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+	yes | sdkmanager --licenses
+
+android-actions/setup-android@v3 needs those listed explicitly. Without a
+packages: input it tries to install the retired tools package and fails.
+
+The release variant is minified and resource shrunk and signed with the debug
+key so it is installable without setting up a keystore. Do not publish that
+artifact. Cut a real signing config first.
+
+For reference, the debug APK is about 176 KB and the release APK about 152 KB,
+against a 5 MB budget that CI enforces as a hard failure. Release is smaller
+because R8 shrinks 34 KB of dex to 20 KB and shortens the resource paths.
+
+android.yml and release.yml both assert that the APK they just built contains
+classes.dex, that both ABIs carry librvm_jni.so, and that MainActivity,
+RvmNative, RvmView, GfxView and KeyBar survived shrinking with their names. A
+green gradle build does not by itself mean a working app; see CHANGELOG.
+
+android/jni/CMakeLists.txt globs src/*.c with CONFIGURE_DEPENDS and drops
+src/main.c, with ANDROID_STL=none and only arm64-v8a and x86_64. One copy of
+the emulator, shared with the desktop build.
+
+
+Continuous integration
+----------------------
+
+Five workflows in .github/workflows. All of them cache ccache or Gradle and
+cancel in progress runs for the same ref.
+
+build	push and PR to main. gcc-13, gcc-14 and clang-18 on ubuntu-24.04 plus
+	Apple clang on macos-14. Runs make dtb, smoke tests --version, --help
+	and --dump-dtb, and uploads rvm-linux-amd64 and rvm-macos-arm64.
+
+test	push and PR to main. The suite under gcc-14 and clang-18 with -Werror,
+	an ASan and UBSan job with halt_on_error=1 and leak detection, and an
+	lcov coverage job that writes to the step summary.
+
+lint	push and PR to main. clang-format pinned to 15.0.0 with --dry-run
+	--Werror, which uploads a patch on failure. -Werror builds under both
+	compilers. shellcheck -x over tools and scripts.
+
+android	push and PR to main. Debug and release APKs, a size report, and a hard
+	failure above 5 MB.
+
+release	tag v*, or manual. A gate job runs format, lint and the tests, then
+	the APK is built and published to a GitHub Release. The release has no
+	body text and no generated notes, just the tag as the title.
+
+Cut a release by tagging:
+
+	git tag -a v0.1.0 -m "RVM 0.1.0"
+	git push origin v0.1.0
+
+A tag with a hyphen in it, v0.2.0-rc1, publishes as a pre-release.
+
+
+Troubleshooting
+---------------
+
+make: invalid option -- 'D'. You wrote make -DWERROR=1. Make variables are
+bare: make WERROR=1.
+
+Mixed mode link errors. build/.mode should have caught it. Run make clean
+anyway.
+
+clang-format produces a huge diff. You are on a different LLVM major version
+than 15. npx clang-format@1.8.0 fetches the right one, or use
+/opt/homebrew/opt/llvm/bin/clang-format on macOS.
+
+dtc not found. make dtb and the DTB step of build.yml need
+device-tree-compiler. The emulator does not, since it builds its FDT in C.
+
+The test binary dies with no output. Run it under stdbuf -o0 -e0. The usual
+cause is a SIGFPE from an INT64_MIN / -1 that reached the host division.
+
+./gradlew: No such file or directory. Expected. Use gradle.
+
+Gradle cannot resolve com.android.tools.build:aapt2. The project needs
+dependencyResolutionManagement with google() and mavenCentral() in
+android/settings.gradle.kts. It is there. If you removed it, put it back.

@@ -1,0 +1,185 @@
+	Architecture
+
+RVM models a whole board, not just an instruction set. Everything here exists
+so an unmodified Debian kernel and userland will run on it, on a desktop and on
+a phone, in well under 5 MB.
+
+	+--------------------------------------------------------+
+	| main.c, ui/          CLI, raw mode terminal            |
+	+--------------------------------------------------------+
+	| vm/vm.c              machine assembly, run loop        |
+	| vm/sbi.c             SBI: timer, console, IPI, reset   |
+	+--------------------------------------------------------+
+	| cpu/     mmu/        bus/                              |
+	| core+CSR Sv39/48/57  RAM and MMIO dispatch             |
+	+--------------------------------------------------------+
+	| devices/  uart  clint  plic  virtio-mmio  virtio-blk   |
+	+--------------------------------------------------------+
+	| loader/   ELF64, raw blob, FDT builder                 |
+	+--------------------------------------------------------+
+	                   libc and libm only
+
+Every arrow points down. cpu/ has never heard of virtio. It reaches memory
+through bus_load and bus_store function pointers and traps otherwise. That is
+why the test suite can drive the CPU with a hand built bus and no VM at all;
+see tests/fixtures/harness.c.
+
+
+Memory map
+----------
+
+One hart, one address space. dtb/rvm.dts and src/loader/fdt.c describe the same
+machine.
+
+	0x02000000  CLINT       64 KB    msip, mtimecmp, mtime at 10 MHz
+	0x0c000000  PLIC        64 MB    64 sources, one M and one S context
+	0x10000000  UART0       256 B    ns16550a, IRQ 10
+	0x10001000  virtio      8 x 4 KB slots 0 to 7, IRQs 1 to 8
+	0x80000000  RAM         8 MB to 8 GB, default 1 GB
+
+src/rvm.h is the single source of truth for those numbers. The FDT builder and
+the .dts are both derived from it and test_fdt_blob checks the result.
+
+
+CPU
+---
+
+cpu_exec32() in src/cpu/cpu.c is one switch over the whole RV64GC opcode space.
+
+Compressed instructions are normalised, not duplicated. c_expand() in
+src/cpu/compressed.c turns any 16 bit instruction into its exact 32 bit
+equivalent and hands that to the same execute path. The decompressor emits real
+encodings rather than an intermediate form, which keeps it auditable: --trace
+shows you the expanded instruction.
+
+Every non branching path falls through to one epilogue:
+
+	c->pc = taken ? npc : (c->pc + (c->last_insn_len ? c->last_insn_len : 4));
+
+Any case that returns early, meaning the AMO helper, the FP helper, mret and
+sret, has to advance pc itself or re-arm npc. Three separate bugs in the first
+working version were exactly this, and all three looked like an instruction
+executing forever.
+
+Corner cases are guarded before the host operation, not after. x86 raises
+SIGFPE on INT64_MIN / -1 and on INT32_MIN % -1, so the spec's defined result
+has to be selected before the C division runs. The same applies to MULHSU,
+where rs2 is unsigned: converting the u64 to __int128 preserves its value,
+which is exactly the required zero extension.
+
+csr.c holds the CSR file. mstatus.SD is never stored. It is computed on read
+from FS and XS, because it is architecturally read only and a stored copy goes
+stale the moment an FP instruction retires.
+
+
+MMU
+---
+
+mmu_translate() is one function used by fetch, load and store. It takes the
+effective privilege and mxr and sum as arguments rather than reaching into the
+CPU, so the tests can drive Sv48 walks directly.
+
+Sv39, Sv48 and Sv57 share one loop parameterised by level count. Superpages are
+supported including the misaligned PPN check that rejects a megapage whose
+PPN[0] is non zero. A and D are managed by hardware, which the spec permits and
+which avoids the trap storm a software managed implementation causes on Linux.
+The TLB is direct mapped on the page number with a generation tag, so
+sfence.vma invalidates by bumping the tag instead of walking 256 entries.
+
+Two permission rules that are easy to get wrong. R=0,W=1 is reserved and
+faults. W=1,X=1 is legal, and treating it as reserved faults on every writable
+and executable page Linux maps.
+
+
+Devices
+-------
+
+Each device is a load/store pair over an address and size, attached with
+bus_attach(). Nothing in bus.c knows what a UART is.
+
+UART is an ns16550a with a real 16 byte FIFO, DLAB divisor registers and an
+interrupt line. uart_set_sink() redirects transmitted bytes: the CLI sends them
+to stdout, the harness sends them to a buffer it can assert on.
+
+CLINT advances mtime from the host clock at a 10 MHz guest timebase and
+compares it against mtimecmp to produce MTIP. clint_tick() returns those bits.
+clint_mtime() returns the counter. They are not the same value.
+
+PLIC has priorities, per context enables, pending bits, threshold and the claim
+and complete handshake.
+
+virtio-mmio lives in virtio.c and device types plug in behind it. virtio_blk.c
+implements the split virtqueue protocol against a host file with pread and
+pwrite, so a guest write really reaches the disk and
+test_virtio_blk_roundtrip can read the file back to prove it.
+
+Devices raise interrupts through a raise(ud, irq, level) callback that the VM
+wires to plic_raise(). The direction matches the memory one: devices point down
+at the bus, never up at the CPU.
+
+
+Loader and device tree
+----------------------
+
+loader_load_elf() parses ELF64 program headers and copies PT_LOAD segments to
+their physical addresses, rejecting anything outside RAM. loader_load_blob()
+handles raw images at a given base.
+
+fdt.c builds the DTB in C. That is deliberate: dtc is not installed everywhere
+and not on Android at all, and a VM that cannot describe its own machine cannot
+boot. dtb/rvm.dts is the same machine written by hand for editing, and
+test_fdt_blob walks the generated blob to check the nodes Linux needs are
+present with the right reg cell order.
+
+
+Run loop
+--------
+
+vm.c assembles the machine and owns the loop.
+
+	while (running) {
+	    if (irq_dirty || insns % 256 == 0) {
+	        pump_input();           /* a read() syscall */
+	        refresh_interrupts();   /* a clock_gettime() */
+	    }
+	    switch (cpu_step()) {
+	        STEP_OK:       continue;
+	        STEP_TRAP:     continue;   /* the trap already moved pc */
+	        STEP_ECALL_M:  sbi_call(); /* SBI is policy, not CPU */
+	        STEP_WFI:      idle();     /* refresh first, then sleep */
+	        STEP_FAULT:    report();
+	        STEP_SHUTDOWN: return;
+	    }
+	}
+
+pump_input() and the clint refresh are syscalls. Running both on every retired
+instruction cost several times more than the instruction itself, so they run
+every 256 instructions and immediately whenever a device moves an interrupt
+line. irq_raise() sets the dirty flag, which means console input gets picked up
+at once, since the UART's irq callback is irq_raise. The WFI path refreshes
+explicitly, because going to sleep on a stale nothing-pending is the one place
+a throttle could hang the guest. clint_load() advances mtime itself on an
+explicit MMIO read, so the clocksource stays smooth between refreshes.
+
+The CPU has no idea SBI exists. It traps on ecall from M-mode and the run loop
+interprets it. That keeps cpu.c free of policy and lets sbi.c be tested on its
+own.
+
+
+What is deliberately not here
+-----------------------------
+
+No JIT for cold code. Blocks are interpreted; only blocks that have run 50
+times or more get cached, and that is PLAN step 12. The cache is keyed on guest
+PC and falls back to the interpreter on any miss, so correctness never depends
+on it.
+
+No DMA engine. virtio transfers are memcpy between the guest buffer and the
+host. A scatter gather engine would be faster and much harder to reason about.
+
+No threads in the VM. One hart, one thread, no locks. The UI polls; it does not
+share the CPU struct.
+
+No heavy dependencies. libc and libm. On Android that is what keeps the APK
+small: no AndroidX, no Material, no Compose, no WebView. The terminal is a
+Canvas and the framebuffer is a SurfaceView.

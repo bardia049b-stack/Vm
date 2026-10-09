@@ -1,0 +1,126 @@
+# Tag v* and this runs the gate, builds the APK and publishes it. The release
+# has no body text: the APK is the point.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (must already exist)'
+        required: true
+
+permissions:
+  contents: write   # softprops/action-gh-release creates the release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: gate (lint + tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 clang-18 device-tree-compiler
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: clang-format
+        run: |
+          npm install --no-save --no-audit --no-fund clang-format@1.8.0
+          npx clang-format --dry-run --Werror \
+            $(find src tests -name '*.c' -o -name '*.h' | sort)
+
+      - name: Lint and test
+        run: |
+          make lint
+          ./scripts/test.sh -v --werror -j"$(nproc)"
+
+  apk:
+    name: build apk
+    runs-on: ubuntu-24.04
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # v3 defaults to the retired `tools` package and fails without this.
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1'
+
+      - name: Accept the SDK licences
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Assemble release
+        working-directory: android
+        run: gradle --no-daemon assembleRelease
+
+      - name: Collect the APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/*.apk out/rvm.apk
+          ls -l out/
+
+      # A green gradle build does not mean a working app. See android.yml.
+      - name: Check the APK actually contains the app
+        run: |
+          LIST=$(unzip -l out/rvm.apk)
+          echo "$LIST"
+          fail() { echo "::error::$1"; exit 1; }
+          echo "$LIST" | grep -q 'classes[0-9]*\.dex' || fail "no classes.dex"
+          for abi in arm64-v8a x86_64; do
+            echo "$LIST" | grep -q "lib/$abi/librvm_jni.so" \
+              || fail "no lib/$abi/librvm_jni.so"
+          done
+          unzip -p out/rvm.apk 'classes*.dex' > /tmp/classes.dex
+          for sym in MainActivity RvmNative RvmView GfxView KeyBar; do
+            grep -aq "$sym" /tmp/classes.dex || fail "$sym missing from dex"
+          done
+          echo "the APK carries all five classes and both ABIs"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: out/rvm.apk
+
+  publish:
+    name: publish
+    runs-on: ubuntu-24.04
+    needs: apk
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-apk
+          path: assets
+
+      # No body, no generated notes. Just the tag as the title and the APK.
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: false
+          generate_release_notes: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: assets/rvm.apk
+          fail_on_unmatched_files: true

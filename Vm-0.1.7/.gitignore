@@ -1,0 +1,70 @@
+# --- build artefacts ---
+*.o
+*.a
+*.so
+*.so.*
+*.d
+*.elf
+*.bin
+*.map
+# Anchored: an unanchored `rvm` also matched android/app/src/main/java/dev/rvm/app/,
+# which silently kept every Java source out of the repository and produced an APK
+# with no classes.dex in it.
+/rvm
+/rvm.exe
+build/
+out/
+dist/
+obj/
+.ccache/
+compile_commands.json
+
+# --- test / coverage ---
+tests/rvm_tests
+*.gcda
+*.gcno
+*.gcov
+coverage/
+test-report.xml
+
+# --- VM runtime artefacts (large, regenerable) ---
+*.img
+*.qcow2
+*.raw
+/vmlinux
+/vmlinux-*
+/Image
+/Image.gz
+*.dtb
+rootfs/
+initrd*
+*.tar.xz
+*.deb
+vmlinuz*
+
+# --- Android / Gradle ---
+.gradle/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/.cxx/
+android/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+captures/
+.externalNativeBuild/
+
+# --- editors / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- logs ---
+*.log
+trace.log

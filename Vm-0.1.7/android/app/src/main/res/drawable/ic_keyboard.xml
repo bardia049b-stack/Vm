@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- An outline and three dots: the smallest thing that still reads as a
+     keyboard at 22dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp" android:height="22dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:strokeColor="@color/ink" android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:pathData="M2,6 H22 V18 H2 Z M6,10 h0.01 M10,10 h0.01 M14,10 h0.01 M18,10 h0.01 M7,14 H17" />
+</vector>

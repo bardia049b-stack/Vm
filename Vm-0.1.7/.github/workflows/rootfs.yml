@@ -1,0 +1,60 @@
+name: rootfs
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap qemu-user-static e2fsprogs
+
+      - name: build rootfs
+        run: |
+          sudo mkdir -p /srv/rootfs
+          sudo debootstrap --arch=riscv64 --foreign --variant=minbase \
+            trixie /srv/rootfs http://deb.debian.org/debian
+          sudo cp /usr/bin/qemu-riscv64-static /srv/rootfs/usr/bin/
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static \
+            /bin/sh /debootstrap/debootstrap --second-stage
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static \
+            /bin/bash -c "echo 'root:root' | chpasswd; echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> /etc/inittab"
+
+      - name: build disk.img
+        run: |
+          sudo dd if=/dev/zero of=/srv/disk.img bs=1M count=2048
+          sudo mkfs.ext4 -F -L rootfs /srv/disk.img
+          sudo mkdir -p /mnt/rootfs
+          sudo mount -o loop /srv/disk.img /mnt/rootfs
+          sudo cp -a /srv/rootfs/* /mnt/rootfs/
+          sudo umount /mnt/rootfs
+          sudo gzip -k /srv/disk.img
+          ls -la /srv/disk.img.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: disk-img
+          path: /srv/disk.img.gz
+          retention-days: 30
+
+      - name: publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: /srv/disk.img.gz
+          fail_on_unmatched_files: false

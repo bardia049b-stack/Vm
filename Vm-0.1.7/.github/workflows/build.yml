@@ -1,0 +1,110 @@
+# Builds ./rvm on Linux and macOS and uploads it as an artefact.
+#
+# ccache is keyed on the compiler, the flags and the source hash, so a warm
+# run relinks instead of recompiling.  The build uses -Werror: a new warning
+# fails CI rather than accumulating silently.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+jobs:
+  linux:
+    name: linux (gcc ${{ matrix.cc }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc-13, gcc-14, clang-18]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ${{ matrix.cc }} ccache device-tree-compiler
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-linux-${{ matrix.cc }}-${{ hashFiles('src/**', 'tests/**', 'Makefile') }}
+          restore-keys: ccache-linux-${{ matrix.cc }}-
+
+      - name: Build
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          make CC=${{ matrix.cc }} -j"$(nproc)" WERROR=1 rvm
+          ccache --show-stats
+
+      - name: Compile the device tree
+        run: make dtb && ls -l dtb/rvm.dtb
+
+      - name: Smoke-test the binary
+        run: |
+          ./rvm --version
+          ./rvm --help | head -5
+          ./rvm --dump-dtb /tmp/rvm.dtb
+          test -s /tmp/rvm.dtb
+
+      - name: Upload rvm
+        if: matrix.cc == 'gcc-14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rvm-linux-amd64
+          path: rvm
+          if-no-files-found: error
+
+      - name: Upload the compiled device tree
+        if: matrix.cc == 'gcc-14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rvm-dtb
+          path: dtb/rvm.dtb
+          if-no-files-found: error
+
+  macos:
+    name: macos (apple clang)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ccache
+        run: brew install ccache
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-macos-${{ hashFiles('src/**', 'tests/**', 'Makefile') }}
+          restore-keys: ccache-macos-
+
+      - name: Build
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          make -j"$(sysctl -n hw.ncpu)" WERROR=1 rvm
+          ccache --show-stats
+
+      - name: Smoke-test the binary
+        run: ./rvm --version && ./rvm --dump-dtb /tmp/rvm.dtb && test -s /tmp/rvm.dtb
+
+      - name: Upload rvm
+        uses: actions/upload-artifact@v4
+        with:
+          name: rvm-macos-arm64
+          path: rvm
+          if-no-files-found: error

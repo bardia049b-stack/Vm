@@ -1,0 +1,130 @@
+	Contributing
+
+Read PLAN first. It says what is being built next and what the constraints are.
+If your change contradicts a rule in there, adding a dependency, introducing a
+thread, pulling in AndroidX, open an issue before opening a patch.
+
+docs/ARCHITECTURE says how the pieces fit together.
+
+
+Getting a build
+---------------
+
+	git clone https://github.com/bardia049b-stack/Vm.git
+	cd Vm
+	make -j"$(nproc)"
+	make test
+	./rvm --help
+
+A C11 compiler and GNU make. dtc is only needed for make dtb, lcov only for
+make coverage, and the Android SDK only for the APK.
+
+
+Before you send it
+------------------
+
+	make lint                  -Werror syntax pass over src and tests
+	./scripts/test.sh --werror the same, optimised, which is not the same
+	make MODE=sanity test      ASan and UBSan
+	make format                clang-format, needs LLVM 15
+
+make lint is -fsyntax-only and does not see warnings that only appear once the
+compiler folds constants at -O2. The --werror run does. CI does both.
+
+shellcheck -x tools/*.sh scripts/*.sh has to be clean, including at info level.
+Use find rather than ls for globbing, quote expansions inside ${VAR#"$prefix"},
+and write { [ a ] || [ b ]; } instead of [ a -o b ].
+
+
+Style
+-----
+
+.clang-format is the policy. LLVM base, 4 spaces, 100 columns, attached braces,
+right aligned pointers. Run make format before committing. CI pins clang-format
+to LLVM 15.0.0 because that is what formatted the tree, and a different major
+version produces diffs.
+
+-Wall -Wextra -Wshadow -Wundef -Wpointer-arith -Wcast-qual -Wstrict-prototypes
+-Wmissing-prototypes are on for every build. Every non static function needs a
+prototype in a header.
+
+Commit messages: imperative subject, no period, and say why in the body. The
+diff already says what. If you fixed a decode or trap bug, include the trace
+line or the objdump output that proved it.
+
+
+Adding a test
+-------------
+
+Declare the suite in tests/test_suites.h and add one RUN() line in
+tests/test_main.c. The Makefile globs tests/*.c, so nothing else changes.
+
+The harness builds a real machine. Emit guest code with th_emit(), or
+th_emit16() for compressed forms, set up registers, then th_run_all(). It runs
+until the PC reaches the end of the emitted stream, so helper instructions from
+th_li() cannot throw off a step count.
+
+Three things that have already cost time here.
+
+th_li() zero extends to 32 bits.
+
+th_run_all() does not stop on STEP_TRAP. An all zero register file after a
+block means the guest trapped and looped, not that the arithmetic was wrong.
+
+Derive expected values from the spec text, not from memory of the ISA.
+
+
+Adding a device
+---------------
+
+Write src/devices/foo.c and foo.h, following virtio_blk.c for the shape. Attach
+it to a virtio slot in vm_new() and give it an IRQ with RVM_VIRTIO_IRQ(n).
+
+Add the node to both dtb/rvm.dts and src/loader/fdt.c. They have to stay
+identical:
+
+	./rvm --dump-dtb /tmp/gen.dtb
+	dtc -I dtb -O dts /tmp/gen.dtb > /tmp/a
+	dtc -I dtb -O dts dtb/rvm.dtb  > /tmp/b
+	diff /tmp/a /tmp/b
+
+android/jni/CMakeLists.txt globs src/*.c with CONFIGURE_DEPENDS, so a new file
+is picked up with no build system change.
+
+Test the transport behaviour, not just the device logic.
+
+
+What gets sent back
+-------------------
+
+A new dependency of any kind, including a vendored .c from another project.
+
+A lock in src/. The VM is single threaded and the only shared state in the
+project is the JNI input ring and vm.running.
+
+An allocation on the hot path.
+
+AndroidX, Material Components, Compose or a WebView.
+
+An APK over 5 MB. CI fails the build, not just a check.
+
+A commit that reformats code it did not otherwise touch.
+
+phandle = <N> written by hand in a .dts.
+
+
+Pull requests
+-------------
+
+One idea per request. A patch that fixes a bug and refactors the file it lives
+in is two patches.
+
+Say what the change does, why the old behaviour was wrong, and how you checked
+it. build, test, lint and android all have to be green.
+
+
+Security
+--------
+
+A guest escape is a security bug, not a correctness bug. See SECURITY, and
+please do not open a public issue for it.

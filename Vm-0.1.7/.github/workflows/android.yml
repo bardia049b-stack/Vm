@@ -1,0 +1,135 @@
+# Builds the Android APK.
+#
+# The app has no third-party Java dependencies, so the interesting work is the
+# NDK build of librvm_jni.so from ../../src.  Gradle and its dependency cache
+# are both cached between runs; the NDK itself is preinstalled on the runner.
+name: android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: apk (${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [debug, release]
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cheap and specific: if this fails, .gitignore is eating the sources
+      # again and everything gradle reports afterwards is meaningless.
+      - name: Check the Java sources are in the checkout
+        # Absolute, because defaults.run.working-directory is android/ for this
+        # job and a relative override here is ambiguous.
+        working-directory: ${{ github.workspace }}
+        run: |
+          for f in MainActivity RvmNative RvmView GfxView KeyBar; do
+            test -f "android/app/src/main/java/dev/rvm/app/$f.java" \
+              || { echo "::error::$f.java is not in the checkout"; exit 1; }
+          done
+          echo "all five Java sources present"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # v3 defaults to installing the retired `tools` package; list exactly
+          # what the build needs so sdkmanager does not fail on it.
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1'
+
+      - name: Accept the SDK licences
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Assemble ${{ matrix.variant }}
+        run: gradle --no-daemon --stacktrace assemble${{ matrix.variant == 'release' && 'Release' || 'Debug' }}
+
+      - name: Report the APK size
+        run: |
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          echo "APK: $APK"
+          ls -l "$APK"
+          SIZE=$(stat -c %s "$APK")
+          MB=$(( SIZE / 1048576 ))
+          echo "### ${{ matrix.variant }} APK: ${MB} MiB (${SIZE} bytes)" >> "$GITHUB_STEP_SUMMARY"
+          # The lightweight rule from PLAN: the APK must stay under 5 MB.
+          if [ "$SIZE" -gt $(( 5 * 1024 * 1024 )) ]; then
+            echo "::error::APK is ${MB} MiB, over the 5 MiB budget"
+            exit 1
+          fi
+          echo "within the 5 MiB budget"
+
+      - name: Check the APK actually contains the app
+        run: |
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          LIST=$(unzip -l "$APK")
+          echo "$LIST" | sort -k1 -n -r | head -25
+
+          fail() { echo "::error::$1"; exit 1; }
+
+          # An unanchored `rvm` in .gitignore once matched
+          # android/app/src/main/java/dev/rvm/app/ and kept every Java source
+          # out of the repository.  Gradle reported compileJavaWithJavac
+          # NO-SOURCE, the build still succeeded, and the APK shipped with the
+          # R classes as its only dex.  These checks are here because a green
+          # gradle build does not mean a working app.
+          echo "$LIST" | grep -q 'classes[0-9]*\.dex' \
+            || fail "no classes.dex in $APK"
+          for abi in arm64-v8a x86_64; do
+            echo "$LIST" | grep -q "lib/$abi/librvm_jni.so" \
+              || fail "no lib/$abi/librvm_jni.so in $APK"
+          done
+
+          # Every one of these has to survive shrinking with its name intact:
+          # MainActivity is the launcher component, RvmNative is looked up by
+          # FindClass from rvm_jni.c, and the three Views are inflated from
+          # activity_main.xml by fully qualified name.
+          # To a file, not a variable: command substitution drops NUL bytes.
+          unzip -p "$APK" 'classes*.dex' > /tmp/classes.dex
+          for sym in MainActivity RvmNative RvmView GfxView KeyBar; do
+            grep -aq "$sym" /tmp/classes.dex \
+              || fail "$sym is missing from classes.dex; shrinking removed it"
+          done
+          echo "classes.dex carries all five classes, both ABIs are present"
+
+      - name: Show what is inside
+        run: |
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          unzip -l "$APK" | awk '{print $1, $4}' | grep -E '\.so$|\.dex$|classes' >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rvm-${{ matrix.variant }}.apk
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
