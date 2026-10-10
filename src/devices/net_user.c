@@ -42,6 +42,21 @@
 /* A slot that has gone quiet is dead: without these timers the UDP table
  * fills up after MAX_UDP lookups and stays full, and DNS dies for the rest of
  * the boot. */
+/* How far the relay may run ahead of the guest's ack, and for how long it waits
+ * before replaying what the guest has not confirmed.  Without these, poll()
+ * drained the socket as fast as the host offered bytes and every frame the
+ * device could not take was lost: an 8 MB fetch died after a few dozen
+ * frames, which is why apt could never finish. */
+#define TCP_WINDOW         16384u
+/* Must stay well above the window: the tail is what a replay reads from, so a
+ * byte evicted here is a byte the guest can never be given again.  Emitting is
+ * gated on the window, so nothing beyond this much is ever outstanding. */
+#define TCP_TAIL           65536u
+#define TCP_RETX_NS        (250ull * 1000000ull) /* 250 ms, not 250 s */
+/* Stop reading the socket once this many frames are queued, so eight
+ * connections cannot fill the 48-deep queue between them and start dropping. */
+#define RX_SPARE           24u
+
 #define UDP_IDLE_NS      (20ull * 1000000000ull)
 #define TCP_IDLE_NS      (30ull * 1000000000ull)
 #define TCP_CONNECT_NS   (10ull * 1000000000ull)
@@ -60,6 +75,13 @@ typedef struct {
     u32 gseq, gack, hseq;
     u8 state; /* 0 free 1 connecting 2 est 3 closing */
     u64 last_ns;
+    /* Everything the guest has not confirmed yet is kept here so it can be
+     * sent again.  gseen is the seq the guest has acked; the tail is the bytes
+     * from tail_base up, and bytes the guest has acknowledged are dropped. */
+    u32 gseen;
+    u32 tail_base, tail_len;
+    u8 tail[TCP_TAIL];
+    u64 last_retx_ns;
 } tconn;
 
 typedef struct {
@@ -84,6 +106,10 @@ struct net_user {
     u8 rx[RX_Q][RX_MAX];
     u32 rx_len[RX_Q];
     u32 rx_r, rx_w;
+    /* Set while the queue is being handed to the device: whoever we hand a frame
+     * to may call straight back in (a guest that acknowledges from within
+     * delivery does), and a second drain would move the indices twice. */
+    bool flushing;
 };
 
 static u16 csum_fold(u32 s) {
@@ -136,11 +162,23 @@ static void qrx(net_user *n, const u8 *f, u32 len) {
     n->rx_len[n->rx_w] = len;
     n->rx_w = nx;
 }
+static u32 rx_backlog(const net_user *n) {
+    return (n->rx_w + RX_Q - n->rx_r) % RX_Q;
+}
+
+/* Deliver as much as the guest will take and stop there.  The head stays in
+ * place when the device refuses it, so a busy RX ring delays a transfer
+ * instead of corrupting it, and the next poll picks the same frame up. */
 static void flush_rx(net_user *n) {
+    if (n->flushing)
+        return; /* the outer loop owns rx_r, and will reach this frame anyway */
+    n->flushing = true;
     while (n->rx_r != n->rx_w) {
-        n->out(n->out_ud, n->rx[n->rx_r], n->rx_len[n->rx_r]);
+        if (!n->out || !n->out(n->out_ud, n->rx[n->rx_r], n->rx_len[n->rx_r]))
+            break;
         n->rx_r = (n->rx_r + 1) % RX_Q;
     }
+    n->flushing = false;
 }
 
 static void eth_send(net_user *n, u16 type, const u8 *pay, u32 plen) {
@@ -411,6 +449,25 @@ static void tcp_emit(net_user *n, tconn *c, u8 flags, const u8 *data, u32 dlen) 
     ip_send_from(n, c->rip, guest_ip, 6, seg, sl);
 }
 
+/* A data segment: record it for replay first, then send it.  Keeping this in
+ * one place is what makes retransmission possible at all. */
+static void tcp_emit_data(net_user *n, tconn *c, const u8 *data, u32 dlen) {
+    if (!dlen)
+        return;
+    if (dlen > TCP_TAIL)
+        dlen = TCP_TAIL;
+    if (c->tail_len + dlen > TCP_TAIL) {
+        u32 drop = c->tail_len + dlen - TCP_TAIL;
+        memmove(c->tail, c->tail + drop, c->tail_len - drop);
+        c->tail_base += drop;
+        c->tail_len -= drop;
+    }
+    memcpy(c->tail + c->tail_len, data, dlen);
+    c->tail_len += dlen;
+    tcp_emit(n, c, 0x18, data, dlen); /* PSH+ACK */
+    c->hseq += dlen;
+}
+
 static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
     if (len < TCP_HLEN)
         return;
@@ -471,6 +528,8 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
             /* SYN-ACK immediately so guest proceeds; data waits for connect complete */
             tcp_emit(n, c, 0x12, NULL, 0);
             c->hseq++;
+            c->gseen = c->hseq; /* our SYN ate one seq number, like theirs */
+            c->tail_base = c->hseq;
             if (r == 0)
                 c->state = 2;
         } else {
@@ -482,6 +541,26 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
     }
     if (!c || c->fd < 0)
         return;
+    /* The guest's ack is the only thing that tells us what actually arrived,
+     * so it is read from every segment, not just the ones carrying data.  An
+     * ack that moved frees the replay buffer and counts as activity, which
+     * keeps a slow-but-progressing guest away from the idle timeout. */
+    if (len >= 12) {
+        u32 v = ((u32)tcp[8] << 24) | ((u32)tcp[9] << 16) | ((u32)tcp[10] << 8) | tcp[11];
+        if (v > c->gseen && v <= c->hseq) {
+            c->gseen = v;
+            c->last_ns = rvm_now_ns();
+            if (c->tail_base + c->tail_len <= v) {
+                c->tail_len = 0;
+                c->tail_base = v;
+            } else if (v > c->tail_base) {
+                u32 adv = v - c->tail_base;
+                memmove(c->tail, c->tail + adv, c->tail_len - adv);
+                c->tail_base = v;
+                c->tail_len -= adv;
+            }
+        }
+    }
     if (dlen) {
         /* Non-blocking: while connect() is still in flight send fails with
          * EAGAIN. Ack only what actually went out; the guest retransmits the
@@ -661,20 +740,69 @@ void net_user_poll(net_user *n) {
             }
         }
         if (c->state >= 2) {
-            u8 buf[1400];
-            ssize_t r = recv(c->fd, buf, sizeof(buf), MSG_DONTWAIT);
-            if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-                continue;
-            if (r > 0) {
-                c->last_ns = now;
-                tcp_emit(n, c, 0x18, buf, (u32)r); /* PSH+ACK */
-                c->hseq += (u32)r;
-            } else if (r == 0) {
-                tcp_emit(n, c, 0x11, NULL, 0);
-                c->hseq++;
-                close(c->fd);
-                c->fd = -1;
-                c->used = false;
+            u32 outst = c->hseq - c->gseen;
+            bool fed = false;
+            if (outst < TCP_WINDOW && rx_backlog(n) <= RX_SPARE) {
+                u8 buf[1400];
+                ssize_t r = recv(c->fd, buf, sizeof(buf), MSG_DONTWAIT);
+                if (r > 0) {
+                    c->last_ns = now;
+                    fed = true;
+                    tcp_emit_data(n, c, (const u8 *)buf, (u32)r);
+                } else if (r == 0) {
+                    tcp_emit(n, c, 0x11, NULL, 0);
+                    c->hseq++;
+                    close(c->fd);
+                    c->fd = -1;
+                    c->used = false;
+                    continue;
+                }
+            }
+            /* Anything the guest has not confirmed eventually goes out again,
+             * whether or not we are at the window: a segment lost at the end of
+             * a transfer is just as fatal as one lost in the middle of it, and
+             * an idle socket is no reason to stop talking. */
+            if (!fed && outst && now - c->last_retx_ns > TCP_RETX_NS) {
+                /* The guest has not confirmed anything for a while and we are
+                 * at our window: it lost a segment (or we could not queue it),
+                 * so replay from the first byte it has not acked.  One segment
+                 * per poll, because the queue in front of us is small and the
+                 * guest's own ack drives the pace. */
+                c->last_retx_ns = now;
+                if (rx_backlog(n) > RX_SPARE)
+                    continue;
+                if (c->gseen < c->tail_base) {
+                    /* The hole is behind what we are still holding: no replay
+                     * can reach it, so reset rather than let the guest wait on
+                     * bytes that are gone.  This is the only case we give up
+                     * on -- a guest that is merely slow is not a broken one, so
+                     * the replays keep coming and the idle timer above decides
+                     * when the connection has had its chance. */
+                    tcp_emit(n, c, 0x14, NULL, 0);
+                    close(c->fd);
+                    c->fd = -1;
+                    c->used = false;
+                    continue;
+                }
+                u32 off = c->gseen - c->tail_base;
+                if (off < c->tail_len) {
+                    /* A replay is not new data: send at the seq the guest is
+                     * missing and leave hseq alone, so the tail keeps
+                     * describing exactly the bytes sent but unacked.  Go back
+                     * over the whole hole while the queue takes it, because a
+                     * segment per round would starve a guest that is waiting. */
+                    u32 top = c->hseq, pos = off;
+                    while (pos < c->tail_len && c->gseen + (pos - off) < top &&
+                           rx_backlog(n) <= RX_SPARE) {
+                        u32 n2 = c->tail_len - pos;
+                        if (n2 > 1400)
+                            n2 = 1400;
+                        c->hseq = c->gseen + (pos - off);
+                        tcp_emit(n, c, 0x18, c->tail + pos, n2);
+                        pos += n2;
+                    }
+                    c->hseq = top;
+                }
             }
         }
     }

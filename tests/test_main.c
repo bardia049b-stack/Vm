@@ -98,6 +98,9 @@ int main(int argc, char **argv) {
     RUN(test_virtio_blk_roundtrip);
     RUN(test_virtio_blk_long_chain);
 
+    printf("[net]\n");
+    RUN(test_net_user_bulk);
+
     printf("[loader]\n");
     RUN(test_loader_elf);
     RUN(test_loader_blob);

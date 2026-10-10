@@ -19,14 +19,17 @@ static void store_bytes(bus *b, u64 addr, const u8 *p, u32 n) {
         bus_store(b, addr + i, 1, p[i]);
 }
 
-static void net_output_cb(void *ud, const u8 *frame, u32 len) {
+/* True only when the frame landed in a guest buffer.  The caller holds on to
+ * anything we refuse, so "no descriptor ready" is backpressure rather than a
+ * dropped packet. */
+static bool net_output_cb(void *ud, const u8 *frame, u32 len) {
     virtio_net *n = (virtio_net *)ud;
     if (!n->vio || !n->vio->bus)
-        return;
+        return false;
     vq_chain ch;
     if (!vq_pop(n->vio, Q_RX, &ch)) {
         n->n_drop++;
-        return;
+        return false;
     }
     u8 hdr[VIRTIO_NET_HDR_SIZE];
     memset(hdr, 0, sizeof(hdr));
@@ -57,8 +60,16 @@ static void net_output_cb(void *ud, const u8 *frame, u32 len) {
             written += take;
         }
     }
+    if (written != need) {
+        /* Short buffer: the guest would drop the truncated frame, so refuse it
+         * and let the relay re-send the whole thing once the driver posts a
+         * buffer big enough. */
+        n->n_drop++;
+        return false;
+    }
     vq_done(n->vio, Q_RX, &ch, written);
     n->n_rx++;
+    return true;
 }
 
 static void net_notify(virtio *v, u32 qidx) {

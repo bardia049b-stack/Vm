@@ -39,6 +39,7 @@ void test_plic_claim(void);
 void test_virtio_transport(void);
 void test_virtio_blk_roundtrip(void);
 void test_virtio_blk_long_chain(void);
+void test_net_user_bulk(void);
 void test_loader_elf(void);
 void test_loader_blob(void);
 void test_fdt_blob(void);

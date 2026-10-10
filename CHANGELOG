@@ -6,6 +6,23 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+src/devices/net_user.c, virtio_net.c, net_user.h: the userspace NAT now does flow
+control and retransmission, so a bulk download finishes.  The relay used to take
+whatever recv() returned, hand it to the guest and forget it: if the virtio-net RX
+ring had no descriptor posted, `net_output_cb` counted a drop and the frame was
+gone, and if the 48-frame queue in front of it was full, `qrx` returned without
+queueing.  Nothing ever re-sent those bytes, so any transfer longer than a few
+dozen frames stalled forever -- a DNS answer or a 22 KB Release file worked, while
+`apt-get update` (which fetches megabytes) hung and had to be killed.  The device
+callback now reports whether it took the frame, `flush_rx` leaves a refused frame
+at the head of the queue and is re-entrancy safe, the relay reads the guest's ack
+from every segment and stops draining the socket once 16 KiB is unacknowledged, and
+it keeps a 64 KiB tail of unacknowledged data to replay from after a 250 ms pause.
+`tests/test_net.c::test_net_user_bulk` pushes 120 KB through a loopback listener
+while the fake guest refuses some frames and silently loses some segments, and
+asserts the bytes arrive complete and in order; without the relay changes it
+delivers 1400 of 120000.
+
 rootfs.yml, tools/mkrootfs.sh: the serial console getty runs -a root.  Asking for
 a password there was a dead end rather than a security measure: login verifies
 through unix_chkpwd, which reads /etc/shadow only by way of its setgid bit, and
