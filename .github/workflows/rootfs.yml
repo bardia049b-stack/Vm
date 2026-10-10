@@ -39,20 +39,20 @@ jobs:
         run: |
           set -e
           sudo cp /etc/resolv.conf /srv/rootfs/etc/resolv.conf
-          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -c "
+          # Everything here is one double-quoted argument to bash inside the
+          # chroot, so no quote of any kind may appear in it -- a stray one
+          # closes the string early and the remaining lines silently stop being
+          # part of the command.  -ec for the same reason: without it a failed
+          # apt install leaves the step green, which is how this image shipped
+          # without ifupdown once.
+          # e2fsprogs: minbase has no fsck.ext4, so a filesystem that asks to be
+          # checked drops the console into maintenance mode with no tool to fix it.
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec "
             apt-get update
-            # e2fsprogs because minbase ships no fsck.ext4 at all: with a
-            # passno that says "check me", checkroot tried to run a program that
-            # is not in the image, gave up and dropped the console into
-            # maintenance mode with no way to fix the filesystem from there.
-            apt-get install -y --no-install-recommends \
-              sysvinit-core ifupdown isc-dhcp-client iproute2 iputils-ping \
-              curl wget ca-certificates e2fsprogs
+            apt-get install -y --no-install-recommends sysvinit-core ifupdown isc-dhcp-client iproute2 iputils-ping curl wget ca-certificates e2fsprogs
             echo 'root:root' | chpasswd
             echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> /etc/inittab
             echo 'rvm' > /etc/hostname
-            # passno 0, not 1: see tools/mkrootfs.sh.  An image that is
-            # unmounted by a kill must not invite a full-check-on-boot.
             echo '/dev/vda / ext4 defaults,nofail 0 0' > /etc/fstab
             echo 'proc /proc proc defaults 0 0' >> /etc/fstab
             echo 'sysfs /sys sysfs defaults 0 0' >> /etc/fstab
@@ -74,28 +74,25 @@ jobs:
           auto eth0
           iface eth0 inet dhcp
           IFACES
-          sudo mkdir -p /srv/rootfs/etc/resolvconf/update-libc.d
+          # A static resolv.conf, written here rather than left to the runner.
+          # The guest resolver is 10.0.2.3, the userspace NAT inside rvm.
+          sudo rm -f /srv/rootfs/etc/resolv.conf
           sudo tee /srv/rootfs/etc/resolv.conf > /dev/null <<'RESOLV'
           nameserver 10.0.2.3
           options timeout:1 attempts:2
           RESOLV
           # The acceptance test for PLAN step 9, run here so a green build means
           # the image really carries the pieces the guest boots with, and not
-          # just that an ext4 file packed.  ifupdown's SysV link is what brings
-          # eth0 up during boot.
+          # just that an ext4 file packed.  ifupdown brings eth0 up at boot, and
+          # its postinst wires only the systemd unit, so the SysV link in rcS.d
+          # has to exist by the time we look at it.
           sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec '
             test -x /etc/init.d/networking
-            # ifupdown's postinst asks for "start 20 S", so the start link is
-            # in rcS.d and there is no rc2.d one to look for.
             ls /etc/rcS.d/S*networking > /dev/null
-            command -v dhclient ip apt >/dev/null
-            # debootstrap leaves /usr/sbin/policy-rc.d in the target while it
-            # installs, and while that file exists every postinst skips
-            # update-rc.d -- so the image ships with no boot links at all and
-            # eth0 never comes up.  Remove it and wire the one script the guest
-            # cannot do without, with ifupdown's own "start 20 S" so the link
-            # lands in rcS.d where SysV looks for it.
+            command -v dhclient ip apt resize2fs > /dev/null
             grep -q "^auto eth0" /etc/network/interfaces
+            test -f /etc/resolv.conf
+            grep -q 10.0.2.3 /etc/resolv.conf
           '
 
       - name: enable networking at boot
