@@ -253,12 +253,48 @@ public final class RvmView extends View {
         case 'h': case 'l': setMode(fin == 'h'); break;
         case 's': savedRow = curRow; savedCol = curCol; break;
         case 'u': curRow = clampRow(savedRow); curCol = clampCol(savedCol); break;
-        case 'r': case 'n': case 'c': case 't': default:
-            /* Scrolling regions, DSR (the emulator answers the cursor query for
-             * the guest, so the view never has to), device attributes and window
-             * ops: nothing a login prompt can wait on. */
+        case 'n':
+            /* DSR: "where is the cursor" (6) and "are you there" (5).  A real
+             * terminal answers these, and the guest blocks waiting for the
+             * reply -- so the keystrokes typed in the meantime are read as the
+             * answer instead of as input.  That is the whole of "typing puts
+             * stray characters on my line": the query was being swallowed here. */
+            if (arg(0, 6) == 6)
+                reportCursor(priv);
+            else if (arg(0, 6) == 5)
+                report(new byte[] {0x1b, '[', '0', 'n'});
+            break;
+        case 'c':
+            /* Device attributes, waited on the same way.  Answer VT102 with all
+             * the options, which is what a plain "ESC [ c" expects to hear. */
+            report(priv ? new byte[] {0x1b, '[', '?', '6', '0', ';', '1', ';', '2', 'c'}
+                        : new byte[] {0x1b, '[', '?', '6', 'c'});
+            break;
+        case 'r': case 't': default:
+            /* Scrolling regions and window ops: nothing a prompt can wait on. */
             break;
         }
+    }
+
+    /** Hand bytes back to the guest, the way a terminal's reply arrives. */
+    private void report(byte[] b) {
+        if (keys == null)
+            return;
+        for (byte value : b)
+            keys.onKey(value);
+    }
+
+    /** The cursor report, in the 1-based decimal form the guest parses. */
+    private void reportCursor(boolean decPrivate) {
+        StringBuilder sb = new StringBuilder(16);
+        sb.append((char) 0x1b).append('[');
+        if (decPrivate)
+            sb.append('?');
+        sb.append(curRow + 1).append(';').append(curCol + 1).append('R');
+        byte[] raw = new byte[sb.length()];
+        for (int i = 0; i < sb.length(); i++)
+            raw[i] = (byte) sb.charAt(i); /* every character here is ASCII */
+        report(raw);
     }
 
     private void setMode(boolean on) {

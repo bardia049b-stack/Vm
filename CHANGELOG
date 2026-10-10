@@ -6,6 +6,16 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+android/app: the view now answers the terminal queries the guest blocks on -- DSR
+cursor position (`CSI 6 n`), status (`CSI 5 n`) and device attributes (`CSI c`).
+It used to swallow them on the theory that the emulator replies; nothing does,
+because src/ui/ui.c parses no escapes and a serial console has no terminal at the
+other end.  A guest that asks and gets nothing waits for the answer, and the first
+keystrokes after the question are consumed as that answer instead of reaching the
+line editor -- the stray characters and dropped letters on the prompt were this,
+on top of the input-loss fix.  Verified by compile and by the CI APK checks; the
+reply path is only exercised on a device.
+
 .github/workflows/rootfs.yml: clear the last-change date from every /etc/shadow
 entry after chpasswd.  pam_unix rejects an account whose password is dated in the
 future, and on a CI-built image the guest clock (no RTC) is always behind the
