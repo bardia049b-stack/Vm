@@ -130,6 +130,9 @@ jobs:
 
             Networking is the emulator's own userspace NAT -- guest `10.0.2.15/24`, gateway
             `10.0.2.2`, resolver `10.0.2.3` -- so `apt update`, `ping`, `curl` and `wget` work
-            inside the guest without a TAP device or root.
+            inside the guest without a TAP device or root.  The address is negotiated by
+`initrd.img` as the kernel hands over, so keep booting with all three files; in
+the app that is automatic.  `dhclient eth0` works too, if you want the guest to
+ask again.
           files: assets/rvm.apk
           fail_on_unmatched_files: true

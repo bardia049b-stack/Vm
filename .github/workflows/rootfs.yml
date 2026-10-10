@@ -67,12 +67,21 @@ jobs:
       - name: configure eth0 through the built-in NAT
         run: |
           set -e
+          # eth0 is manual on purpose.  The initramfs already negotiated the
+          # lease with rvm's own userspace NAT and leaves the address, the route
+          # and the resolver on the way into this rootfs, so all ifupdown has to
+          # do is keep the interface UP.  Asking it to run a DHCP client during
+          # boot instead put the console at the mercy of that client: udhcpc
+          # worked, ISC dhclient printed a banner and then blocked before it even
+          # bound a socket, and either way a phone sat at
+          # "Configuring network interfaces" instead of showing a login prompt.
+          # `dhclient eth0` still works by hand, bounded by the config below.
           sudo tee /srv/rootfs/etc/network/interfaces > /dev/null <<'IFACES'
           auto lo
           iface lo inet loopback
 
           auto eth0
-          iface eth0 inet dhcp
+          iface eth0 inet manual
           IFACES
           # A static resolv.conf, written here rather than left to the runner.
           # The guest resolver is 10.0.2.3, the userspace NAT inside rvm.
@@ -91,20 +100,18 @@ jobs:
             ls /etc/rcS.d/S*networking > /dev/null
             command -v dhclient ip apt resize2fs > /dev/null
             grep -q "^auto eth0" /etc/network/interfaces
+            grep -q "^iface eth0 inet manual" /etc/network/interfaces
             test -f /etc/resolv.conf
             grep -q 10.0.2.3 /etc/resolv.conf
           '
 
-      - name: bound the boot-time DHCP wait
+      - name: keep a manual dhclient short
         run: |
           set -e
-          # ifupdown runs dhclient for us and ISC logs to syslog, so the console
-          # says nothing at all while it retries -- on a phone that is a boot
-          # that appears to have fallen asleep for minutes inside
-          # "Configuring network interfaces".  ISC defaults retry for five
-          # minutes before it gives a lease up, so bound it here.  A failure is
-          # survivable: the initramfs already left an address and a route on the
-          # interface, and those walk into the new root untouched.
+          # Not for boot -- eth0 is manual now, see above -- but a user who runs
+          # `dhclient eth0` by hand should not inherit ISC's five-minute retry
+          # schedule either, and ISC logs to syslog rather than the console, so
+          # that wait is invisible from the serial line.
           sudo tee /srv/rootfs/etc/dhcp/dhclient.conf > /dev/null <<'DHCPC'
           timeout 15;
           retry 5;

@@ -6,6 +6,14 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+rootfs.yml: eth0 is manual in /etc/network/interfaces, and the initramfs is what
+owns the address.  Having ifupdown run a DHCP client at boot put the login prompt
+behind that client's own behaviour -- ISC's dhclient printed its banner, then
+blocked before it bound anything, with nothing on the console to say why -- while
+the lease rvm's NAT already handed out is kernel state that walks straight into the
+new root, address, route and resolver included.  /etc/dhcp/dhclient.conf keeps
+short timeouts for anyone who runs dhclient by hand.
+
 virtio: a descriptor chain is now walked to its end.  The iovec table held 16
 entries and vq_pop simply stopped collecting when it was full, so any request
 bigger than about 56 KB was truncated, the status byte was left unwritten and
