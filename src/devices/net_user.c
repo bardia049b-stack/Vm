@@ -26,7 +26,7 @@
 #define ETH_P_ARP 0x0806
 #define MAX_TCP   24
 #define MAX_UDP   16
-#define RX_Q      48
+#define RX_Q      256
 #define RX_MAX    1600
 
 /* macOS has no MSG_DONTWAIT.  Every socket here is created O_NONBLOCK, so on
@@ -46,16 +46,27 @@
  * before replaying what the guest has not confirmed.  Without these, poll()
  * drained the socket as fast as the host offered bytes and every frame the
  * device could not take was lost: an 8 MB fetch died after a few dozen
- * frames, which is why apt could never finish. */
-#define TCP_WINDOW         16384u
+ * frames, which is why apt could never finish.
+ *
+ * The window is at the largest value this handshake can express.  The relay
+ * does not negotiate window scaling, so the guest caps it at 65535 bytes --
+ * and on an emulated link a phone spends seconds per round trip, so a small
+ * window means a transfer that is correct but hours long.  Growing the window
+ * is what buys throughput; the tail has to hold everything unacked, so it
+ * grows with it. */
+#define TCP_WINDOW         65280u
 /* Must stay well above the window: the tail is what a replay reads from, so a
  * byte evicted here is a byte the guest can never be given again.  Emitting is
  * gated on the window, so nothing beyond this much is ever outstanding. */
-#define TCP_TAIL           65536u
+#define TCP_TAIL           131072u
 #define TCP_RETX_NS        (250ull * 1000000ull) /* 250 ms, not 250 s */
 /* Stop reading the socket once this many frames are queued, so eight
  * connections cannot fill the 48-deep queue between them and start dropping. */
-#define RX_SPARE           24u
+/* Hold off reading the socket once this many frames are queued, so that eight
+ * connections cannot fill the queue between them and start dropping again.  It
+ * sits above the window on purpose: the window should be what paces a transfer,
+ * not the queue. */
+#define RX_SPARE           160u
 
 #define UDP_IDLE_NS      (20ull * 1000000000ull)
 #define TCP_IDLE_NS      (30ull * 1000000000ull)

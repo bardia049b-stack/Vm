@@ -6,6 +6,13 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+src/devices/net_user.c: the NAT queue is 256 frames deep and the send window is
+the largest this handshake can express (65280 bytes, since the relay does not
+negotiate window scaling).  Correctness came with the tail buffer above; speed
+comes with this, because a phone spends seconds per round trip and a 16 KiB
+window turned a full Packages.gz into hours of small steps.  The hold-off limit
+moved with the queue so the window, not the queue, is what paces a transfer.
+
 src/devices/net_user.c, virtio_net.c, net_user.h: the userspace NAT now does flow
 control and retransmission, so a bulk download finishes.  The relay used to take
 whatever recv() returned, hand it to the guest and forget it: if the virtio-net RX
