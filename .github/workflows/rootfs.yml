@@ -78,7 +78,9 @@ jobs:
           # eth0 up during boot.
           sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec '
             test -x /etc/init.d/networking
-            ls /etc/rcS.d/S*networking /etc/rc2.d/S*networking > /dev/null
+            # ifupdown's postinst asks for "start 20 S", so the start link is
+            # in rcS.d and there is no rc2.d one to look for.
+            ls /etc/rcS.d/S*networking > /dev/null
             command -v dhclient ip apt >/dev/null
             grep -q "^auto eth0" /etc/network/interfaces
           '
