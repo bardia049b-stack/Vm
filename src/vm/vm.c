@@ -20,7 +20,7 @@ void vm_opts_default(vm_opts *o) {
     memset(o, 0, sizeof(*o));
     o->ram_size = RVM_RAM_DEFAULT;
     o->bootargs =
-        "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw init=/bin/sh";
+        "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw";
     o->isa = "rv64imafdc";
     o->mmu_type = "riscv,sv57";
     o->dtb_addr = RVM_DTB_DEFAULT_ADDR;
@@ -41,8 +41,67 @@ static void irq_raise(void *ud, u32 irq, bool level) {
     v->irq_dirty = true;
 }
 
+/* Track the guest cursor and answer ESC[6n.  A line-editing shell (busybox
+ * ash, for one) asks the terminal where the cursor is before drawing its
+ * prompt, and blocks until something answers; on a serial console with no
+ * terminal behind it the prompt therefore hangs until the first keystroke,
+ * which then gets eaten as the reply.  Answering here makes every frontend
+ * behave like a real terminal. */
+static void term_note(vm *v, u8 ch) {
+    switch (v->term_esc) {
+    case 0:
+        if (ch == 0x1B) {
+            v->term_esc = 1;
+            return;
+        }
+        if (ch == '\n' || ch == '\r') {
+            v->term_col = 0;
+            return;
+        }
+        if (ch == '\b') {
+            if (v->term_col)
+                v->term_col--;
+            return;
+        }
+        if (ch == '\t') {
+            v->term_col = (v->term_col | 7u) + 1u;
+            return;
+        }
+        if (ch >= 0x20)
+            v->term_col++;
+        return;
+    case 1:
+        v->term_paramlen = 0;
+        v->term_esc = (ch == '[') ? 2 : 0;
+        return;
+    default:
+        if (ch >= '0' && ch <= '9') {
+            if (v->term_paramlen < sizeof(v->term_param))
+                v->term_param[v->term_paramlen++] = ch;
+            return;
+        }
+        if (ch == ';')
+            return;
+        if (ch == 'n' && v->term_paramlen == 1 && v->term_param[0] == '6') {
+            v->hold_head = 0;
+            v->hold_count = 0;
+            char rep[24];
+            int n = snprintf(rep, sizeof(rep), "\033[1;%uR", v->term_col + 1u);
+            for (int i = 0; i < n; i++)
+                uart_push(&v->uart, (u8)rep[i]);
+            v->q_mode = true;
+            v->q_left = (u32)n;
+            v->q_base = v->uart.rx_count;
+            v->q_start_ns = rvm_now_ns();
+        }
+        v->term_esc = 0;
+        return;
+    }
+}
+
 static void uart_emit(void *ud, u8 ch) {
     vm *v = (vm *)ud;
+    term_note(v, ch);
     if (!v->opts.write) {
         fputc(ch, stdout);
         if (ch == '\n')
@@ -328,9 +387,34 @@ static void pump_input(vm *v) {
         return;
     u8 buf[256];
     int n = v->opts.poll(v->opts.poll_ud, buf, sizeof(buf));
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < n; i++) {
+        if (v->q_mode) {
+            if (v->hold_count < sizeof(v->hold)) {
+                v->hold[(v->hold_head + v->hold_count) % sizeof(v->hold)] = buf[i];
+                v->hold_count++;
+            }
+            continue;
+        }
         if (!uart_push(&v->uart, buf[i]))
             break;
+    }
+}
+
+/* The query reply is the only thing in the receive ring while q_mode is set,
+ * so once the guest has popped it the query read is over and held host input
+ * may flow.  A two second wall clock covers a guest that never reads. */
+static void query_release(vm *v) {
+    if (!v->q_mode)
+        return;
+    u32 popped = v->q_base - v->uart.rx_count;
+    bool done = popped >= v->q_left || rvm_now_ns() - v->q_start_ns > 2000000000ULL;
+    if (!done)
+        return;
+    v->q_mode = false;
+    while (v->hold_count && uart_push(&v->uart, v->hold[v->hold_head])) {
+        v->hold_head = (v->hold_head + 1) % sizeof(v->hold);
+        v->hold_count--;
+    }
 }
 
 static void idle_until_timer(vm *v) {
@@ -362,6 +446,14 @@ rvm_err vm_run(vm *v) {
             pump_input(v);
             refresh_interrupts(v);
             v->irq_dirty = false;
+            /* A prompt has no newline: without this flush it would sit in
+             * the batch buffer until the guest next prints one, which on a
+             * phone reads as "nothing shows until I press Enter". */
+            if (v->outlen && v->opts.write) {
+                v->opts.write(v->opts.write_ud, v->outbuf, v->outlen);
+                v->outlen = 0;
+            }
+            query_release(v);
         }
 
         step_result r = cpu_step(&v->cpu);
@@ -399,6 +491,15 @@ rvm_err vm_run(vm *v) {
                 if ((cause & 0x3F) == 7)
                     v->cpu.csr[CSR_MIP] |= MIP_STIP;
                 cpu_mret(&v->cpu);
+            } else if (!is_irq && v->cpu.priv == PRV_M && v->cpu.last_from_priv != PRV_M) {
+                /* A synchronous exception that reached M-mode has no handler
+                 * anywhere: continuing would execute the kernel entry in
+                 * M-mode in a fault loop. Stop loudly instead. */
+                LOG_ERROR("vm: undelegated exception cause=%llu tval=0x%llx pc=0x%llx priv=%u",
+                          (unsigned long long)(cause & 0x3F),
+                          (unsigned long long)v->cpu.last_tval,
+                          (unsigned long long)v->cpu.pc, v->cpu.last_from_priv);
+                vm_stop(v, 1);
             }
             break;
         }
