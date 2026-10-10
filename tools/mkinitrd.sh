@@ -97,6 +97,29 @@ mount -t devtmpfs dev /dev 2>/dev/null
 # Without a lease script udhcpc never applies the address it obtains.
 ifconfig eth0 up 2>/dev/null
 udhcpc -i eth0 -n -q -s /usr/share/udhcpc/default.script >/dev/null 2>&1
+
+# The initramfs is a debug shell *and* the hand-off into a real rootfs.  A disk
+# with /sbin/init takes over as soon as it mounts, so kernel + disk lands in
+# Debian instead of stopping here -- which is what "apt: not found" on a phone
+# has always meant.  Pass rvm.shell=1 on the kernel command line to stay here.
+if ! grep -qs 'rvm.shell=1' /proc/cmdline; then
+	mkdir -p /newroot
+	if mount /dev/vda /newroot 2>/dev/null || mount /dev/vda1 /newroot 2>/dev/null; then
+		if [ -x /newroot/sbin/init ]; then
+			echo "=== rvm initramfs: /dev/vda found, handing the console over ==="
+			mount --move /dev /newroot/dev 2>/dev/null || mount -t devtmpfs dev /newroot/dev 2>/dev/null
+			mount --move /proc /newroot/proc 2>/dev/null || mount -t proc proc /newroot/proc 2>/dev/null
+			mount --move /sys /newroot/sys 2>/dev/null || mount -t sysfs sys /newroot/sys 2>/dev/null
+			# chroot rather than switch_root: busybox switch_root wants the
+			# initramfs to look a particular way and prints its usage when it
+			# does not, which leaves a phone in a shell with no reason given.
+			# The initramfs stays mounted and costs 1.6 MB nobody misses.
+			exec chroot /newroot /sbin/init console=ttyS0
+		fi
+		umount /newroot 2>/dev/null
+	fi
+fi
+
 echo
 echo "=== rvm initramfs: busybox static ==="
 uname -a

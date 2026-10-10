@@ -51,6 +51,17 @@ jobs:
           make CC=${{ matrix.cc }} -j"$(nproc)" WERROR=1 rvm
           ccache --show-stats
 
+      # PLAN makes "the desktop binary is under 300 KB" a rule, not a wish, so
+      # it is asserted here.  It was silently over for a long time.
+      - name: Check the size budget
+        run: |
+          SIZE=$(stat -c %s rvm)
+          echo "rvm is $SIZE bytes ($(( SIZE / 1024 )) KiB)"
+          if [ "$SIZE" -gt $(( 300 * 1024 )) ]; then
+            echo "::error::rvm is $SIZE bytes, over the 300 KiB budget in PLAN"
+            exit 1
+          fi
+
       - name: Compile the device tree
         run: make dtb && ls -l dtb/rvm.dtb
 

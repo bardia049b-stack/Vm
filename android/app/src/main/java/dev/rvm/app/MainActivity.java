@@ -20,7 +20,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.Button;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -81,7 +81,8 @@ public final class MainActivity extends Activity {
         });
 
         wireKeys();
-        wireToolbar();
+        wireMenu();
+        trackIme();
 
         console.setKeyListener(new RvmView.KeyListener() {
             @Override public void onKey(byte ch) { send(new byte[] { ch }); }
@@ -121,15 +122,16 @@ public final class MainActivity extends Activity {
 
         console.clear();
         if (!kernel.exists()) {
-            banner("No kernel yet.\n\nTap 'Kernel' and pick a riscv64 kernel, either the "
-                 + "ELF vmlinux or the PE/EFI Image that Debian ships as /boot/vmlinux-*, "
-                 + "then 'Disk' and pick a Debian ext4 image built with tools/mkrootfs.sh, "
-                 + "then 'Boot'.\n\nLong-press the RVM title for a debug log.");
+            banner("No kernel yet.\n\nOpen the menu (top right) and pick Kernel: a riscv64 kernel, "
+                 + "either the ELF vmlinux or the Image Debian ships as /boot/vmlinux-*. "
+                 + "Then Disk, then Boot.  The initramfs is already in the app.\n\n"
+                 + "Long-press the RVM title for a debug log.\n");
         } else {
             banner("Ready.\n  kernel: " + human(kernel.length())
                  + "\n  initrd: " + (initrd.exists() ? human(initrd.length()) : "(none)")
                  + "\n  disk:   " + (disk.exists() ? human(disk.length()) : "(none)")
-                 + "\n\nTap 'Boot'.  Long-press the RVM title for a debug log.");
+                 + "\n\nMenu (top right) -> Boot.  Tap the screen for the keyboard, "
+                 + "long-press to copy and paste.");
         }
     }
 
@@ -179,47 +181,115 @@ public final class MainActivity extends Activity {
     /* -------------------------------------------------------------- wiring */
 
     private void wireKeys() {
-        keys.setSender(new KeyBar.Sender() {
+        keys.setSink(new KeyBar.Sink() {
             @Override public void send(byte[] seq) {
-                if (keys.isCtrlLatched() && seq.length == 1 && seq[0] >= 'a' && seq[0] <= 'z') {
-                    seq = new byte[] { (byte) (seq[0] - 'a' + 1) };
-                    keys.releaseCtrl();
+                boolean alt = keys.isAltLatched();
+                boolean ctrl = keys.isCtrlLatched();
+                keys.releaseLatches();
+                if (alt) MainActivity.this.send(new byte[] { 27 });
+                if (ctrl && seq.length == 1 && seq[0] >= 'a' && seq[0] <= 'z') {
+                    MainActivity.this.send(new byte[] { (byte) (seq[0] - 'a' + 1) });
+                    return;
                 }
                 MainActivity.this.send(seq);
             }
-        });
-        keys.toggleIme = new Runnable() {
-            @Override public void run() {
-                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                if (imm == null) return;
-                if (imm.isActive(console)) imm.hideSoftInputFromWindow(console.getWindowToken(), 0);
-                else { console.requestFocus(); imm.showSoftInput(console, 0); }
+
+            @Override public void scrollPages(int dir) {
+                if (dir == 0) console.scrollToBottom();
+                else console.scrollPages(dir);
             }
-        };
+
+            @Override public void hideIme() {
+                setImeVisible(false);
+            }
+        });
     }
 
-    private void wireToolbar() {
-        Button boot = findViewById(R.id.btn_boot);
-        Button pickKernel = findViewById(R.id.btn_kernel);
-        Button pickDisk = findViewById(R.id.btn_disk);
-        Button pickInitrd = findViewById(R.id.btn_initrd);
-        Button stop = findViewById(R.id.btn_stop);
+    /*
+     * Termux keeps its extra-keys row attached to the keyboard, not to the
+     * activity: keys while you type, the whole screen while you read.  There is
+     * no API for "the IME is open" below API 30 that every device answers the
+     * same way, so this measures the visible frame instead -- the window loses
+     * more than a fifth of its height exactly when a keyboard slides in.
+     */
+    private void trackIme() {
+        final View root = findViewById(R.id.root);
+        root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b,
+                                                 int ol, int ot, int or, int ob) {
+                if (b == ot && r == or) return;
+                android.graphics.Rect frame = new android.graphics.Rect();
+                root.getWindowVisibleDisplayFrame(frame);
+                int hidden = b - frame.bottom;
+                boolean open = hidden > b / 4;
+                if (open != imeOpen) {
+                    imeOpen = open;
+                    setKeysVisible(open);
+                }
+            }
+        });
+    }
 
-        boot.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { startVm(); }
+    private boolean imeOpen;
+
+    private void setKeysVisible(boolean show) {
+        findViewById(R.id.keys).setVisibility(show ? View.VISIBLE : View.GONE);
+        findViewById(R.id.keyscroll).setVisibility(show ? View.VISIBLE : View.GONE);
+        findViewById(R.id.keyrule).setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    private void setImeVisible(boolean show) {
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm == null) return;
+        if (show) { console.requestFocus(); imm.showSoftInput(console, 0); }
+        else imm.hideSoftInputFromWindow(console.getWindowToken(), 0);
+    }
+
+    /*
+     * Everything that used to be a button in a row is a menu item now, plus a
+     * couple that never had a home: Clear, and the debug-log switch that was
+     * only reachable by a long-press nobody finds.
+     */
+    private void wireMenu() {
+        findViewById(R.id.menu).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openMenu(); }
         });
-        stop.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { stopVm(); }
+    }
+
+    private void openMenu() {
+        PopupMenu menu = new PopupMenu(this, findViewById(R.id.menu));
+        /* add(resId) alone would give every item id 0, so the resource doubles
+         * as the item id: that is what onMenuItemClick compares on. */
+        int act = (vmThread != null) ? R.string.stop : R.string.boot;
+        int dbg = debug ? R.string.debug_on : R.string.debug_off;
+        int order = 0;
+        menu.getMenu().add(0, act, order++, act);
+        menu.getMenu().add(0, R.string.kernel, order++, R.string.kernel);
+        menu.getMenu().add(0, R.string.disk, order++, R.string.disk);
+        menu.getMenu().add(0, R.string.initrd, order++, R.string.initrd);
+        menu.getMenu().add(0, R.string.clear, order++, R.string.clear);
+        menu.getMenu().add(0, dbg, order++, dbg);
+        menu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
+            @Override public boolean onMenuItemClick(android.view.MenuItem item) {
+                int id = item.getItemId();
+                if (id == R.string.boot || id == R.string.stop) {
+                    if (vmThread != null) stopVm(); else startVm();
+                } else if (id == R.string.kernel) pick(PICK_KERNEL);
+                else if (id == R.string.disk) pick(PICK_DISK);
+                else if (id == R.string.initrd) pick(PICK_INITRD);
+                else if (id == R.string.clear) console.clear();
+                else if (id == R.string.debug_on || id == R.string.debug_off) {
+                    debug = !debug;
+                    getSharedPreferences("rvm", MODE_PRIVATE).edit()
+                        .putBoolean("debug", debug).apply();
+                    applyLogSink();
+                    toast(debug ? "debug log on: boot again and it will be captured"
+                                : "debug log off");
+                }
+                return true;
+            }
         });
-        pickKernel.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { pick(PICK_KERNEL); }
-        });
-        pickDisk.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { pick(PICK_DISK); }
-        });
-        pickInitrd.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { pick(PICK_INITRD); }
-        });
+        menu.show();
     }
 
     private void send(byte[] seq) {

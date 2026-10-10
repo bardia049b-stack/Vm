@@ -65,6 +65,11 @@ bool uart_store(void *dev, u64 off, u32 size, u64 val);
 
 /* Host -> guest.  Returns false if the FIFO is full (caller should retry). */
 bool uart_push(uart *u, u8 ch);
+/* Bytes the FIFO can still accept, so a poll() that consumes as it goes is
+ * never asked for more than fits. */
+static inline u32 uart_rx_space(const uart *u) {
+    return UART_RX_SIZE - u->rx_count;
+}
 /* Drain one byte the guest wrote; convenience for tests. */
 void uart_set_sink(uart *u, void (*emit)(void *ud, u8 ch), void *ud);
 void uart_set_irq(uart *u, void (*raise)(void *ud, u32 irq, bool level), void *ud);

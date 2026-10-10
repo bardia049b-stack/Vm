@@ -14,4 +14,9 @@
     <string name="desc_left">Left</string>
     <string name="desc_right">Right</string>
     <string name="desc_keyboard">Keyboard</string>
+    <string name="menu">Menu</string>
+    <string name="clear">Clear</string>
+    <string name="debug_on">Debug log: on</string>
+    <string name="debug_off">Debug log: off</string>
+    <string name="menu_glyph">\u2261</string>
 </resources>

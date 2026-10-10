@@ -10,8 +10,8 @@ tested. A step that leaves the tree red is not finished.
 	step 5	CLINT				done
 	step 6	PLIC				done
 	step 7	virtio-blk			done
-	step 8	boot Debian			scripts written, not verified
-	step 9	virtio-net			not started
+	step 8	boot Debian			hand-off verified, debootstrap not
+	step 9	virtio-net			userspace NAT done, TAP not verified
 	step 10	virtio-gpu, virtio-input	not started
 	step 11	virtio-snd			not started
 	step 12	hot block JIT			not started
@@ -24,8 +24,10 @@ These are constraints, not preferences. A change that breaks one needs a
 decision recorded here first.
 
 C11, libc and libm. No glib, no zlib, no vendored third party code. The desktop
-binary is under 300 KB. The APK stays under 5 MB and CI fails the build if it
-does not.
+binary is under 300 KB and CI asserts it -- it sat at 340 KB for a while with
+nobody noticing, all of it debug info, so a release build carries no -g and
+MODE=debug is one make away when something needs a line number. The APK stays
+under 5 MB and CI fails the build if it does not.
 
 On Android: no AndroidX, no Material, no Compose, no WebView. One Activity,
 three custom Views, a LinearLayout of buttons. Terminal on Canvas, graphics on
@@ -41,6 +43,12 @@ and a host buffer.
 No clever JIT. When step 12 lands it translates hot basic blocks, keys the
 cache on guest PC, falls back to the interpreter for everything else, and does
 no register allocation and no optimisation passes.
+
+The console itself is black with light glyphs; the paper palette is for the
+chrome around it. (DECISION: a #F5F4F0 terminal on a phone reads as a misprint,
+and every row a button row costs an 80-column grid is a row of guest output. The
+helper keys therefore live with the keyboard, not on the screen, and the actions
+that used to be a toolbar are in the header menu.)
 
 Soft colours and no decoration in the UI. #F5F4F0 paper, #2B2B28 ink, #D8D5CE
 rules. Monospace in the terminal. No animation, no elevation, no gradients.
@@ -161,7 +169,12 @@ with the flipped VRING_WRITE flag.
 Step 8: boot Debian
 -------------------
 
-Written, not verified. Building a rootfs needs root, a couple of gigabytes of
+Verified along the path a phone actually takes: the released Image, the busybox
+initramfs and the Debian disk boot, virtio-blk appears as /dev/vda with the
+right size, and /init hands the console over to the init on the disk. Pass
+rvm.shell=1 to stay in the initramfs instead, which is the debugging mode. The
+tools/mkrootfs.sh debootstrap route is still unverified: it wants root, a couple
+of gigabytes and a network, none of which the development host had. Building a rootfs needs root, a couple of gigabytes of
 RAM and a route to deb.debian.org, and none of that existed where this was
 developed. What ships is the tooling plus the parts of step 8 that are
 unit tested, which is the FDT builder and the ELF loader.
@@ -200,6 +213,15 @@ on Linux, and a user mode fallback for Android, which has no TAP device.
 The user mode stack stays small. ARP for the gateway, a DHCP offer of
 10.0.2.15/24, enough IP to route, and just enough TCP and UDP to carry a
 connection through NAT. No fragment reassembly, no IPv6.
+
+Nothing in it may block, because the poll runs inside the VM loop: a blocking
+read there is the guest stopping. The resolver forward used to wait up to two
+seconds on 8.8.8.8, longer than busybox will wait for an answer, so every lookup
+was late and lost at once; it forwards, returns, and a later tick collects the
+reply. The same rule is why both connection tables have idle timers: without
+them the sixteen UDP slots fill up on the seventeenth lookup and the network is
+dead for the rest of the boot. Both are visible in --stats, which counts rx and
+tx packets.
 
 On the host, for the TAP path:
 

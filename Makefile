@@ -22,7 +22,10 @@ OPT      ?= -O0 -g3 -DRVM_DEBUG
 else ifeq ($(MODE),sanity)
 OPT      ?= -O1 -g -fsanitize=address,undefined
 else
-OPT      ?= -O2 -g
+# No -g in the shipped build: the debug info alone weighed more than the whole
+# program (349 KB against 90 KB), and PLAN caps the desktop binary at 300 KB.
+# MODE=debug is one make away when something needs a line number.
+OPT      ?= -O2
 endif
 # _POSIX_C_SOURCE unlocks pread/pwrite/ftruncate/nanosleep under strict -std=c11.
 DEFS     ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE

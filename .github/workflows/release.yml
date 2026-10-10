@@ -105,6 +105,9 @@ jobs:
           path: assets
 
       # No body, no generated notes. Just the tag as the title and the APK.
+      # A release the user has to guess at is not finished.  The three files
+      # beside the APK come from kernel.yml and rootfs.yml, which run on the
+      # same tag.
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
@@ -113,5 +116,20 @@ jobs:
           draft: false
           generate_release_notes: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            Install `rvm.apk` (arm64-v8a and x86_64), then download the other three.
+
+            | file | what it is |
+            | --- | --- |
+            | `Image` | riscv64 Linux 6.12 with virtio-mmio, virtio-blk, virtio-net and ext4 built in |
+            | `initrd.img` | busybox initramfs: brings up eth0, then switches root to `/dev/vda` |
+            | `disk.img.gz` | Debian 13 minbase with getty, apt, curl and DHCP on eth0. Unzip it first |
+
+            In the app: menu (three dots) -> **Kernel**, **Disk**, **Initrd**, pick the three
+            files, then menu -> **Boot**. Nothing else to configure.
+
+            Networking is the emulator's own userspace NAT -- guest `10.0.2.15/24`, gateway
+            `10.0.2.2`, resolver `10.0.2.3` -- so `apt update`, `ping`, `curl` and `wget` work
+            inside the guest without a TAP device or root.
           files: assets/rvm.apk
           fail_on_unmatched_files: true

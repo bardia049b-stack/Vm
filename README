@@ -13,11 +13,11 @@ Building
 
 	make
 
-produces ./rvm, about 295 KB. You need a C11 compiler and GNU make.
+produces ./rvm, about 92 KB. You need a C11 compiler and GNU make.
 
 	make test
 
-builds and runs the test suite, 31 suites and 585 assertions.
+builds and runs the test suite, 31 suites and 602 assertions.
 
 	make lint
 	make MODE=sanity test
@@ -30,7 +30,8 @@ docs/BUILDING for every target, mode and variable.
 Running
 -------
 
-You need a kernel and a disk image. Both come from Debian:
+A kernel, an initrd and a disk image are attached to every GitHub release, so
+downloading them is the short way. To build them yourself:
 
 	./tools/fetch_kernel.sh --out vmlinux
 	sudo ./tools/mkrootfs.sh --out disk.img
@@ -94,6 +95,14 @@ Licensing
 MIT. See LICENSE.
 
 ## Boot shell
-Default cmdline uses init=/bin/sh so a serial shell appears even when the
-rootfs has no getty on ttyS0. Replace with a normal init once inittab is set.
+
+The default cmdline is `console=ttyS0 earlycon=ns16550a,mmio32,0x10000000
+root=/dev/vda rootwait rw` -- no `init=` anywhere. What decides whether you get
+a shell is the initrd: `tools/mkinitrd.sh` builds a busybox initramfs whose /init
+brings eth0 up through the built-in NAT and then, if /dev/vda has an /sbin/init,
+switches root into it. Put `rvm.shell=1` on --bootargs to keep the initramfs
+shell and skip the hand-off.
+
+The APK ships that same initramfs as an asset, so on a phone Kernel and Disk is
+all there is to pick.
 

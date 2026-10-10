@@ -29,6 +29,23 @@
 #define RX_Q      48
 #define RX_MAX    1600
 
+/* macOS has no MSG_DONTWAIT.  Every socket here is created O_NONBLOCK, so on
+ * that platform the flag has nothing left to say and 0 is the honest value.
+ * MSG_NOSIGNAL gets the same guard for hosts that spell it differently. */
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
+/* A slot that has gone quiet is dead: without these timers the UDP table
+ * fills up after MAX_UDP lookups and stays full, and DNS dies for the rest of
+ * the boot. */
+#define UDP_IDLE_NS      (20ull * 1000000000ull)
+#define TCP_IDLE_NS      (30ull * 1000000000ull)
+#define TCP_CONNECT_NS   (10ull * 1000000000ull)
+
 static const u8 guest_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56};
 static const u8 host_mac[6] = {0x52, 0x55, 0x0a, 0x00, 0x02, 0x02};
 static const u32 guest_ip = 0x0a00020f;
@@ -42,12 +59,21 @@ typedef struct {
     u32 rip;
     u32 gseq, gack, hseq;
     u8 state; /* 0 free 1 connecting 2 est 3 closing */
+    u64 last_ns;
 } tconn;
 
 typedef struct {
     bool used;
     int fd;
     u16 gport;
+    u32 dip;  /* where the guest sent it, so a reply is not misfiled */
+    u16 dport;
+    /* A forwarded resolver query has to come back with dns_ip:53 as its
+     * source or the guest's connected socket drops it.  qid keeps a retry from
+     * being answered by the reply to the query it replaced. */
+    bool dns;
+    u16 qid;
+    u64 last_ns;
 } uconn;
 
 struct net_user {
@@ -253,39 +279,67 @@ static void dhcp_reply(net_user *n, const u8 *req, u32 len, u16 sport, u8 type) 
     ip_send_from(n, gw_ip, guest_ip, 17, udp, ul);
 }
 
-static void handle_dns(net_user *n, const u8 *q, u32 ql, u16 sport) {
+static void udp_free(net_user *n, uconn *c) {
+    (void)n;
+    if (c->fd >= 0)
+        close(c->fd);
+    memset(c, 0, sizeof(*c));
+    c->fd = -1;
+}
+
+/* One host socket per (guest port, destination) pair, so two flows that share
+ * a source port do not overwrite each other.  When the table is full the
+ * quietest entry is recycled rather than the packet being dropped forever. */
+static uconn *udp_slot(net_user *n, u16 gport, u32 dip, u16 dport) {
+    uconn *reuse = NULL;
+    u64 oldest = ~(u64)0;
+    for (int i = 0; i < MAX_UDP; i++) {
+        uconn *c = &n->udp[i];
+        if (c->used && c->gport == gport && c->dip == dip && c->dport == dport)
+            return c;
+        if (!c->used) {
+            reuse = c;
+            break;
+        }
+        if (c->last_ns < oldest) {
+            oldest = c->last_ns;
+            reuse = c;
+        }
+    }
+    if (!reuse)
+        return NULL;
+    if (reuse->used)
+        udp_free(n, reuse);
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0)
+        return NULL;
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    memset(reuse, 0, sizeof(*reuse));
+    reuse->used = true;
+    reuse->fd = fd;
+    reuse->gport = gport;
+    reuse->dip = dip;
+    reuse->dport = dport;
+    reuse->last_ns = rvm_now_ns();
+    return reuse;
+}
+
+static void handle_dns(net_user *n, const u8 *q, u32 ql, u16 sport) {
+    /* Forward it and let net_user_poll() collect the answer.  The old version
+     * blocked in recvfrom for two seconds, and a blocked poll is a guest that
+     * has stopped running: on a phone the prompt simply hangs there. */
+    uconn *c = udp_slot(n, sport, dns_ip, 53);
+    if (!c)
         return;
-    struct timeval tv = {2, 0};
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    c->dns = true;
+    c->qid = (ql >= 2) ? (u16)((q[0] << 8) | q[1]) : 0;
     struct sockaddr_in sa;
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     sa.sin_port = htons(53);
     sa.sin_addr.s_addr = htonl(0x08080808);
-    if (sendto(fd, q, ql, 0, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-        close(fd);
-        return;
-    }
-    u8 resp[512];
-    ssize_t nr = recvfrom(fd, resp, sizeof(resp), 0, NULL, NULL);
-    close(fd);
-    if (nr <= 0)
-        return;
-    u8 udp[8 + 512];
-    memset(udp, 0, 8);
-    udp[1] = 53;
-    udp[2] = (u8)(sport >> 8);
-    udp[3] = (u8)sport;
-    u16 ul = (u16)(8 + nr);
-    udp[4] = (u8)(ul >> 8);
-    udp[5] = (u8)ul;
-    memcpy(udp + 8, resp, (size_t)nr);
-    u16 uc = transport_csum(dns_ip, guest_ip, 17, udp, ul);
-    udp[6] = (u8)(uc >> 8);
-    udp[7] = (u8)uc;
-    ip_send_from(n, dns_ip, guest_ip, 17, udp, ul);
+    if (sendto(c->fd, q, ql, 0, (struct sockaddr *)&sa, sizeof(sa)) < 0)
+        udp_free(n, c);
 }
 
 static void handle_udp(net_user *n, u32 dst, const u8 *udp, u32 len) {
@@ -317,33 +371,16 @@ static void handle_udp(net_user *n, u32 dst, const u8 *udp, u32 len) {
         handle_dns(n, pl, plen, sp);
         return;
     }
-    int slot = -1;
-    for (int i = 0; i < MAX_UDP; i++) {
-        if (n->udp[i].used && n->udp[i].gport == sp) {
-            slot = i;
-            break;
-        }
-        if (!n->udp[i].used && slot < 0)
-            slot = i;
-    }
-    if (slot < 0)
+    uconn *c = udp_slot(n, sp, dst, dp);
+    if (!c)
         return;
-    uconn *c = &n->udp[slot];
-    if (!c->used) {
-        int fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0)
-            return;
-        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-        c->used = true;
-        c->fd = fd;
-        c->gport = sp;
-    }
+    c->last_ns = rvm_now_ns();
     struct sockaddr_in sa;
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     sa.sin_port = htons(dp);
     sa.sin_addr.s_addr = htonl(dst);
-    sendto(c->fd, pl, plen, 0, (struct sockaddr *)&sa, sizeof(sa));
+    sendto(c->fd, pl, plen, MSG_DONTWAIT, (struct sockaddr *)&sa, sizeof(sa));
 }
 
 static void tcp_emit(net_user *n, tconn *c, u8 flags, const u8 *data, u32 dlen) {
@@ -389,7 +426,7 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
 
     tconn *c = NULL;
     for (int i = 0; i < MAX_TCP; i++)
-        if (n->tcp[i].used && n->tcp[i].gport == sp) {
+        if (n->tcp[i].used && n->tcp[i].gport == sp && n->tcp[i].rip == dst) {
             c = &n->tcp[i];
             break;
         }
@@ -415,6 +452,7 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
         c->gack = seq + 1;
         c->hseq = 1000;
         c->state = 1;
+        c->last_ns = rvm_now_ns();
         int fd = socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) {
             c->used = false;
@@ -451,6 +489,7 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
         ssize_t sent = send(c->fd, data, dlen, MSG_NOSIGNAL | MSG_DONTWAIT);
         if (sent < 0)
             return;
+        c->last_ns = rvm_now_ns();
         c->gack = seq + (u32)sent;
         if (sent == (ssize_t)dlen) {
             if (flags & 1)
@@ -548,10 +587,15 @@ void net_user_input(net_user *n, const u8 *frame, u32 len) {
 void net_user_poll(net_user *n) {
     if (!n)
         return;
+    u64 now = rvm_now_ns();
     for (int i = 0; i < MAX_UDP; i++) {
         uconn *c = &n->udp[i];
         if (!c->used || c->fd < 0)
             continue;
+        if (now - c->last_ns > UDP_IDLE_NS) {
+            udp_free(n, c);
+            continue;
+        }
         u8 buf[1500];
         struct sockaddr_in sa;
         socklen_t sl = sizeof(sa);
@@ -559,6 +603,15 @@ void net_user_poll(net_user *n) {
             recvfrom(c->fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *)&sa, &sl);
         if (r <= 0)
             continue;
+        if (c->dns) {
+            /* Only the answer to the query this slot is holding counts: a reply
+             * to a retry the guest already gave up on is dropped. */
+            if (r < 2 || (u16)((buf[0] << 8) | buf[1]) != c->qid)
+                continue;
+        } else if (ntohl(sa.sin_addr.s_addr) != c->dip || ntohs(sa.sin_port) != c->dport) {
+            continue;
+        }
+        c->last_ns = now;
         u8 udp[8 + 1500];
         memset(udp, 0, 8);
         u16 sp = ntohs(sa.sin_port);
@@ -570,21 +623,35 @@ void net_user_poll(net_user *n) {
         udp[4] = (u8)(ul >> 8);
         udp[5] = (u8)ul;
         memcpy(udp + 8, buf, (size_t)r);
-        u32 remote = ntohl(sa.sin_addr.s_addr);
-        u16 uc = transport_csum(remote, guest_ip, 17, udp, ul);
+        /* A resolver reply has to be sourced from the address the guest asked,
+         * not from the upstream server it never spoke to. */
+        u32 src = c->dns ? dns_ip : ntohl(sa.sin_addr.s_addr);
+        u16 uc = transport_csum(src, guest_ip, 17, udp, ul);
         udp[6] = (u8)(uc >> 8);
         udp[7] = (u8)uc;
-        ip_send_from(n, remote, guest_ip, 17, udp, ul);
+        ip_send_from(n, src, guest_ip, 17, udp, ul);
+        if (c->dns)
+            udp_free(n, c);
     }
     for (int i = 0; i < MAX_TCP; i++) {
         tconn *c = &n->tcp[i];
         if (!c->used || c->fd < 0)
             continue;
+        if (now - c->last_ns > (c->state == 1 ? TCP_CONNECT_NS : TCP_IDLE_NS)) {
+            if (c->state >= 2)
+                tcp_emit(n, c, 0x14, NULL, 0); /* RST, so the guest stops retransmitting */
+            close(c->fd);
+            c->fd = -1;
+            c->used = false;
+            continue;
+        }
         if (c->state == 1) {
             int err = 0;
             socklen_t el = sizeof(err);
-            if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &el) == 0 && err == 0)
+            if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &el) == 0 && err == 0) {
                 c->state = 2;
+                c->last_ns = now;
+            }
             else if (err != 0) {
                 tcp_emit(n, c, 0x14, NULL, 0); /* RST */
                 close(c->fd);
@@ -599,6 +666,7 @@ void net_user_poll(net_user *n) {
             if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
                 continue;
             if (r > 0) {
+                c->last_ns = now;
                 tcp_emit(n, c, 0x18, buf, (u32)r); /* PSH+ACK */
                 c->hseq += (u32)r;
             } else if (r == 0) {

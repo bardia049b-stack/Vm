@@ -83,16 +83,14 @@ static void term_note(vm *v, u8 ch) {
         if (ch == ';')
             return;
         if (ch == 'n' && v->term_paramlen == 1 && v->term_param[0] == '6') {
-            v->hold_head = 0;
-            v->hold_count = 0;
+            /* The reply goes into the same ring as host keystrokes, ahead of
+             * any typed later, so nothing needs holding back: an earlier
+             * revision parked input aside and reset it per query, which ate
+             * every keystroke that arrived while a prompt was being drawn. */
             char rep[24];
             int n = snprintf(rep, sizeof(rep), "\033[1;%uR", v->term_col + 1u);
             for (int i = 0; i < n; i++)
                 uart_push(&v->uart, (u8)rep[i]);
-            v->q_mode = true;
-            v->q_left = (u32)n;
-            v->q_base = v->uart.rx_count;
-            v->q_start_ns = rvm_now_ns();
         }
         v->term_esc = 0;
         return;
@@ -385,35 +383,16 @@ static void pump_input(vm *v) {
         virtio_net_poll(&v->net);
     if (!v->opts.poll)
         return;
+    /* Take only what the guest's FIFO can still hold.  poll() consumes as it
+     * returns, so asking for more than fits would drop the difference. */
+    u32 space = uart_rx_space(&v->uart);
+    if (space == 0)
+        return;
     u8 buf[256];
-    int n = v->opts.poll(v->opts.poll_ud, buf, sizeof(buf));
+    int n = v->opts.poll(v->opts.poll_ud, buf, RVM_MIN(space, (u32)sizeof(buf)));
     for (int i = 0; i < n; i++) {
-        if (v->q_mode) {
-            if (v->hold_count < sizeof(v->hold)) {
-                v->hold[(v->hold_head + v->hold_count) % sizeof(v->hold)] = buf[i];
-                v->hold_count++;
-            }
-            continue;
-        }
         if (!uart_push(&v->uart, buf[i]))
             break;
-    }
-}
-
-/* The query reply is the only thing in the receive ring while q_mode is set,
- * so once the guest has popped it the query read is over and held host input
- * may flow.  A two second wall clock covers a guest that never reads. */
-static void query_release(vm *v) {
-    if (!v->q_mode)
-        return;
-    u32 popped = v->q_base - v->uart.rx_count;
-    bool done = popped >= v->q_left || rvm_now_ns() - v->q_start_ns > 2000000000ULL;
-    if (!done)
-        return;
-    v->q_mode = false;
-    while (v->hold_count && uart_push(&v->uart, v->hold[v->hold_head])) {
-        v->hold_head = (v->hold_head + 1) % sizeof(v->hold);
-        v->hold_count--;
     }
 }
 
@@ -453,7 +432,6 @@ rvm_err vm_run(vm *v) {
                 v->opts.write(v->opts.write_ud, v->outbuf, v->outlen);
                 v->outlen = 0;
             }
-            query_release(v);
         }
 
         step_result r = cpu_step(&v->cpu);
@@ -583,6 +561,10 @@ void vm_print_stats(const vm *v) {
         fprintf(stderr, "  virtio-blk r/w/flush : %llu / %llu / %llu (%llu errors)\n",
                 (unsigned long long)v->blk.n_read, (unsigned long long)v->blk.n_write,
                 (unsigned long long)v->blk.n_flush, (unsigned long long)v->blk.n_err);
+    if (v->net_present)
+        fprintf(stderr, "  virtio-net rx/tx      : %llu / %llu\n",
+                (unsigned long long) virtio_net_rx_packets(&v->net),
+                (unsigned long long) virtio_net_tx_packets(&v->net));
     fprintf(stderr, "  PLIC raise/claim     : %llu / %llu\n", (unsigned long long)v->plic.n_raise,
             (unsigned long long)v->plic.n_claim);
     fprintf(stderr, "--------------------------------------------------------------\n");

@@ -6,13 +6,54 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+Input is no longer parked behind the cursor reply, because parking it was the
+half of the fix above that did not work. A new query reset the side buffer, so
+every keystroke typed while a prompt was being drawn was thrown away, and a
+buffer the guest had only half drained handed its leftovers over a command late
+-- which is all "characters appear that nobody typed" ever was. The reply now
+goes into the same ring the keystrokes use, so ordering costs nothing and
+nothing is held anywhere. pump_input also asks a frontend for no more than the
+UART FIFO can still take instead of dropping the difference.
+
+The Android console parses a VT subset instead of swallowing CSI: cursor moves,
+ED/EL, IL/DL, insert and delete chars, SGR with the sixteen ANSI colours, save
+and restore, and alt-screen as a clear. The parser keeps its state between
+writes, which matters because output arrives in 1 KiB batches and a sequence
+split across two of them used to print its tail as text. The grid is fixed at 80
+columns to match the guest's tty, with the font sized to fit them; deriving the
+width from the screen made the app wrap a line where the guest had not.
+
+The phone UI is a terminal now: no button row over the console, no key row while
+the keyboard is closed. Boot, Stop, Kernel, Disk, Initrd, Clear and the debug log
+are in the header menu; PgUp, PgDn, Home and the arrows are helper keys that ride
+with the IME; long-press selects a line and offers Paste, Copy, Select all and
+Clear, double-tap copies one.
+
+net_user.c: the resolver forward no longer blocks in recvfrom for two seconds
+inside the VM loop (it forwards, returns, and a later poll collects the answer,
+which is also the only reason a busybox lookup can win its own timeout), UDP
+slots are keyed on destination as well as guest port, and both connection tables
+have idle timers -- without them the table filled on the seventeenth lookup and
+the network was dead for the rest of the boot. macOS has no MSG_DONTWAIT; the
+guard that covers it is what the macos job was failing on.
+
+tools/mkinitrd.sh: /init switches root into /dev/vda when the disk has an
+/sbin/init, so kernel plus disk lands in Debian instead of a busybox shell with
+no apt; rvm.shell=1 asks for the shell on purpose. .github/workflows/rootfs.yml
+gives the image eth0 with DHCP and installs ifupdown, iproute2, isc-dhcp-client,
+iputils-ping, curl and wget, so the guest has a route to that NAT. kernel.yml
+publishes initrd.img beside the Image and release.yml says what each file is.
+
+make: a release build carries no -g. The debug info was 257 KB on a 92 KB
+binary and PLAN's 300 KB ceiling had no check, so it sat at 340 KB unnoticed;
+the number is asserted in build.yml now.
+
 The terminal answers the cursor-position query now. ash asks where the
 cursor is (ESC[6n) before drawing its first prompt and blocks until
 someone replies; nobody did, so the shell sat dead until the first
 keystroke, which it then ate as the answer -- every character typed
 before that landed in the wrong place. The emulator tracks the column it
-has printed and replies the way a real terminal does, holds incoming
-keystrokes aside while the reply is in flight, and flushes output that
+has printed and replies the way a real terminal does, and flushes output that
 ends without a newline -- a prompt is exactly that -- on the poll tick
 instead of hoarding it until the next write. Typing echoes within a
 tenth of a second again.

@@ -94,14 +94,6 @@ typedef struct vm {
     u8 term_esc;
     u8 term_param[8];
     u8 term_paramlen;
-    /* While the shell's cursor query is being answered, host input is held
-     * back: a raw read during the query would otherwise swallow pending
-     * keystrokes as part of the terminal's reply. */
-    u8 hold[4096];
-    u32 hold_head, hold_count;
-    bool q_mode;
-    u32 q_left, q_base;
-    u64 q_start_ns; /* traps seen, for the rate-limited trap diagnostic */
     u64 start_ns;
 
     /* Line-buffered console sink state */

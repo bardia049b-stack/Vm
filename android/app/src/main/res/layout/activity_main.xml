@@ -2,10 +2,12 @@
 <!--
   SPDX-License-Identifier: MIT
 
-  One vertical LinearLayout.  A dark header carries the name and the status so
-  the status bar reads as part of the app instead of as a seam; the console
-  takes all spare space; the helper keys scroll sideways so a landscape phone
-  never clips them.  No ConstraintLayout, no nesting beyond the one scroll.
+  One vertical LinearLayout: a header that carries the name, the status and the
+  menu, then the console, then the helper keys.  There is no toolbar of action
+  buttons any more -- Boot, Stop, Kernel, Disk and Initrd live in the menu the
+  header opens, and the key row only exists while the soft keyboard is up.  A
+  terminal wants every line it can get: 80 columns on a phone is already tight,
+  and a permanent row of buttons was costing three of them.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
@@ -23,11 +25,11 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@color/ink"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
         android:paddingTop="0dp"
-        android:paddingBottom="10dp"
-        android:minHeight="52dp">
+        android:paddingBottom="8dp"
+        android:minHeight="46dp">
 
         <TextView
             android:id="@+id/title"
@@ -35,59 +37,44 @@
             android:layout_height="wrap_content"
             android:text="@string/app_title"
             android:textColor="@color/on_ink"
-            android:textSize="17sp"
+            android:textSize="16sp"
             android:textStyle="bold"
             android:fontFamily="monospace"
-            android:letterSpacing="0.12" />
+            android:letterSpacing="0.12"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
 
         <TextView
             android:id="@+id/status"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="12dp"
+            android:layout_marginStart="10dp"
             android:gravity="end"
             android:textColor="@color/on_ink_soft"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:fontFamily="monospace"
             android:singleLine="true"
             android:ellipsize="end"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
             android:text="@string/idle" />
+
+        <!-- The menu.  A text glyph rather than an icon: one vector less in the
+             APK and it is 48dp of touch target either way. -->
+        <TextView
+            android:id="@+id/menu"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:minWidth="44dp"
+            android:gravity="center"
+            android:text="@string/menu_glyph"
+            android:textColor="@color/on_ink"
+            android:textSize="19sp"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="@string/menu" />
     </LinearLayout>
-
-    <!-- Toolbar: four flat buttons on paper. -->
-    <LinearLayout
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:background="@color/paper"
-        android:paddingStart="5dp"
-        android:paddingEnd="5dp"
-        android:paddingTop="5dp"
-        android:paddingBottom="5dp">
-
-        <Button android:id="@+id/btn_boot"
-            style="@style/RvmButton"
-            android:text="@string/boot" />
-        <Button android:id="@+id/btn_stop"
-            style="@style/RvmButton"
-            android:text="@string/stop" />
-        <Button android:id="@+id/btn_kernel"
-            style="@style/RvmButton"
-            android:text="@string/kernel" />
-        <Button android:id="@+id/btn_disk"
-            style="@style/RvmButton"
-            android:text="@string/disk" />
-        <Button android:id="@+id/btn_initrd"
-            style="@style/RvmButton"
-            android:text="@string/initrd" />
-    </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/rule" />
 
     <!-- The guest framebuffer.  GONE until virtio-gpu produces a scanout, so
          the console owns the whole screen until something needs the pixels. -->
@@ -98,24 +85,25 @@
         android:layout_weight="1"
         android:visibility="gone" />
 
-    <!-- The serial console. -->
+    <!-- The serial console: all the space there is. -->
     <dev.rvm.app.RvmView
         android:id="@+id/console"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp" />
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp" />
 
     <View
+        android:id="@+id/keyrule"
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/rule" />
+        android:background="@color/rule"
+        android:visibility="gone" />
 
-    <!-- Helper keys.  Sideways scrollable: nine keys do not fit a landscape
-         phone and clipping them is worse than scrolling. -->
+    <!-- Helper keys, sideways scrollable and gone until the keyboard is up. -->
     <HorizontalScrollView
         android:id="@+id/keyscroll"
         android:layout_width="match_parent"
@@ -123,7 +111,8 @@
         android:background="@color/paper_dark"
         android:fillViewport="true"
         android:scrollbars="none"
-        android:overScrollMode="never">
+        android:overScrollMode="never"
+        android:visibility="gone">
 
         <dev.rvm.app.KeyBar
             android:id="@+id/keys"
