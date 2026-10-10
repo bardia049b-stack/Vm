@@ -65,15 +65,18 @@ static u16 csum_fold(u32 s) {
         s = (s & 0xffff) + (s >> 16);
     return (u16)~s;
 }
+/* Checksums sum big-endian 16-bit words, so walk the buffer byte by byte:
+ * a u16 load would make the result depend on the host byte order. */
 static u16 ip_csum(const void *b, int n) {
-    const u16 *p = b;
+    const u8 *p = b;
     u32 s = 0;
     while (n > 1) {
-        s += *p++;
+        s += ((u32)p[0] << 8) | p[1];
+        p += 2;
         n -= 2;
     }
     if (n)
-        s += *(const u8 *)p;
+        s += (u32)p[0] << 8;
     return csum_fold(s);
 }
 static u16 transport_csum(u32 src, u32 dst, u8 proto, const u8 *buf, int len) {
@@ -82,16 +85,17 @@ static u16 transport_csum(u32 src, u32 dst, u8 proto, const u8 *buf, int len) {
     s += src & 0xffff;
     s += (dst >> 16) & 0xffff;
     s += dst & 0xffff;
-    s += htons(proto);
-    s += htons((u16)len);
-    const u16 *p = (const u16 *)buf;
+    s += proto;
+    s += (u32)len;
+    const u8 *p = buf;
     int n = len;
     while (n > 1) {
-        s += *p++;
+        s += ((u32)p[0] << 8) | p[1];
+        p += 2;
         n -= 2;
     }
     if (n)
-        s += *(const u8 *)p;
+        s += (u32)p[0] << 8;
     u16 r = csum_fold(s);
     return (proto == 17 && r == 0) ? 0xffff : r;
 }
@@ -329,6 +333,7 @@ static void handle_udp(net_user *n, u32 dst, const u8 *udp, u32 len) {
         int fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd < 0)
             return;
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
         c->used = true;
         c->fd = fd;
         c->gport = sp;
@@ -415,6 +420,8 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
             c->used = false;
             return;
         }
+        /* fcntl, not SOCK_NONBLOCK: macOS does not have the flag. */
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
         c->fd = fd;
         struct sockaddr_in sa;
         memset(&sa, 0, sizeof(sa));
@@ -437,10 +444,21 @@ static void handle_tcp(net_user *n, u32 dst, const u8 *tcp, u32 len) {
     }
     if (!c || c->fd < 0)
         return;
-    c->gack = seq + dlen + ((flags & 1) ? 1 : 0);
     if (dlen) {
-        send(c->fd, data, dlen, MSG_NOSIGNAL);
-        tcp_emit(n, c, 0x10, NULL, 0);
+        /* Non-blocking: while connect() is still in flight send fails with
+         * EAGAIN. Ack only what actually went out; the guest retransmits the
+         * rest, which is what keeps a slow handshake lossless. */
+        ssize_t sent = send(c->fd, data, dlen, MSG_NOSIGNAL | MSG_DONTWAIT);
+        if (sent < 0)
+            return;
+        c->gack = seq + (u32)sent;
+        if (sent == (ssize_t)dlen) {
+            if (flags & 1)
+                c->gack++;
+            tcp_emit(n, c, 0x10, NULL, 0);
+        }
+    } else {
+        c->gack = seq + ((flags & 1) ? 1 : 0);
     }
     if (flags & 1) {
         shutdown(c->fd, SHUT_WR);
@@ -537,7 +555,8 @@ void net_user_poll(net_user *n) {
         u8 buf[1500];
         struct sockaddr_in sa;
         socklen_t sl = sizeof(sa);
-        ssize_t r = recvfrom(c->fd, buf, sizeof(buf), 0, (struct sockaddr *)&sa, &sl);
+        ssize_t r =
+            recvfrom(c->fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *)&sa, &sl);
         if (r <= 0)
             continue;
         u8 udp[8 + 1500];
@@ -576,7 +595,9 @@ void net_user_poll(net_user *n) {
         }
         if (c->state >= 2) {
             u8 buf[1400];
-            ssize_t r = recv(c->fd, buf, sizeof(buf), 0);
+            ssize_t r = recv(c->fd, buf, sizeof(buf), MSG_DONTWAIT);
+            if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                continue;
             if (r > 0) {
                 tcp_emit(n, c, 0x18, buf, (u32)r); /* PSH+ACK */
                 c->hseq += (u32)r;
