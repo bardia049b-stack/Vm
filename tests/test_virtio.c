@@ -117,8 +117,21 @@ void test_virtio_transport(void) {
     cap |= v << 32;
     CHECK_U64(cap, (16ULL << 20) / VIRTIO_BLK_SECTOR_SIZE);
 
-    /* A 4-byte access is the only supported width. */
-    CHECK(!virtio_load(&dev, REG_MAGIC, 2, &v));
+    /* Sub-word accesses work: the Linux virtio-mmio driver reads config
+     * space one byte at a time (vm_get), and a rejected width faults the
+     * guest kernel. */
+    u64 magic = 0;
+    CHECK(virtio_load(&dev, REG_MAGIC, 4, &magic));
+    CHECK(virtio_load(&dev, REG_MAGIC, 2, &v));
+    CHECK_U64(v, magic & 0xFFFFu);
+    CHECK(virtio_load(&dev, REG_MAGIC + 2, 2, &v));
+    CHECK_U64(v, magic >> 16);
+    CHECK(virtio_load(&dev, REG_CONFIG, 1, &v));
+    CHECK_U64(v, cap & 0xFFu);
+    CHECK(virtio_load(&dev, REG_CONFIG + 3, 1, &v));
+    CHECK_U64(v, (cap >> 24) & 0xFFu);
+    CHECK(!virtio_load(&dev, REG_MAGIC, 3, &v));
+    CHECK(!virtio_load(&dev, REG_MAGIC, 0, &v));
 
     virtio_blk_close(&blk);
     unlink(path);

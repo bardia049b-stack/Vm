@@ -77,74 +77,35 @@ static virtqueue *cur_queue(virtio *v) {
     return &v->q[v->queue_sel];
 }
 
-bool virtio_load(void *dev, u64 off, u32 size, u64 *out) {
-    virtio *v = (virtio *)dev;
-    if (size != 4)
-        return false;
-    *out = 0;
-
-    if (off >= REG_CONFIG) {
-        u32 coff = (u32)(off - REG_CONFIG);
-        u8 buf[8] = {0};
-        u32 len = (size == 4) ? 4 : 8;
-        if (v->be->read_config)
-            v->be->read_config(v, coff, len, buf);
-        memcpy(out, buf, len);
-        return true;
-    }
-
+static u32 virtio_reg_read(virtio *v, u32 off) {
     switch (off) {
     case REG_MAGIC:
-        *out = VIRTIO_MMIO_MAGIC;
-        break;
+        return VIRTIO_MMIO_MAGIC;
     case REG_VERSION:
-        *out = VIRTIO_VERSION;
-        break;
+        return VIRTIO_VERSION;
     case REG_DEVICE_ID:
-        *out = v->be->device_id;
-        break;
+        return (u32)v->be->device_id;
     case REG_VENDOR_ID:
-        *out = VIRTIO_VENDOR;
-        break;
+        return VIRTIO_VENDOR;
     case REG_DEVICE_FEATURES:
-        *out = (u32)((v->device_features >> (32 * (v->features_sel & 1))) & 0xFFFFFFFFu);
-        break;
+        return (u32)((v->device_features >> (32 * (v->features_sel & 1))) & 0xFFFFFFFFu);
     case REG_QUEUE_NUM_MAX:
-        *out = cur_queue(v) ? cur_queue(v)->num_max : 0;
-        break;
+        return cur_queue(v) ? cur_queue(v)->num_max : 0;
     case REG_QUEUE_READY:
-        *out = cur_queue(v) ? (cur_queue(v)->ready ? 1 : 0) : 0;
-        break;
+        return cur_queue(v) ? (cur_queue(v)->ready ? 1u : 0u) : 0;
     case REG_INTERRUPT_STATUS:
-        *out = v->irq_status;
-        break;
+        return v->irq_status;
     case REG_STATUS:
-        *out = v->status;
-        break;
+        return v->status;
     case REG_CONFIG_GEN:
-        *out = v->generation;
-        break;
+        return v->generation;
     default:
-        break; /* reserved registers read as zero */
+        return 0; /* reserved registers read as zero */
     }
-    return true;
 }
 
-bool virtio_store(void *dev, u64 off, u32 size, u64 val) {
-    virtio *v = (virtio *)dev;
-    if (size != 4)
-        return false;
-    u32 w = (u32)val;
-
-    if (off >= REG_CONFIG) {
-        u32 coff = (u32)(off - REG_CONFIG);
-        u8 buf[4];
-        memcpy(buf, &w, 4);
-        if (v->be->write_config)
-            v->be->write_config(v, coff, 4, buf);
-        return true;
-    }
-
+static void virtio_reg_write(virtio *v, u32 off, u32 w) {
+    (void)v;
     switch (off) {
     case REG_DEVICE_FEATURES_SEL:
         v->features_sel = w;
@@ -234,6 +195,57 @@ bool virtio_store(void *dev, u64 off, u32 size, u64 val) {
     default:
         break;
     }
+
+}
+
+bool virtio_load(void *dev, u64 off, u32 size, u64 *out) {
+    virtio *v = (virtio *)dev;
+    if (!out || size == 0 || size > 8 || (size & (size - 1)))
+        return false;
+    *out = 0;
+
+    if (off >= REG_CONFIG) {
+        u32 coff = (u32)(off - REG_CONFIG);
+        u8 buf[8] = {0};
+        if (v->be->read_config) {
+            for (u32 i = 0; i < size; i++)
+                v->be->read_config(v, coff + i, 1, &buf[i]);
+        }
+        memcpy(out, buf, size);
+        return true;
+    }
+
+    u32 base = (u32)(off & ~3ULL);
+    u32 shift = (u32)((off & 3) * 8);
+    u64 word = virtio_reg_read(v, base);
+    if (size == 8)
+        word |= (u64)virtio_reg_read(v, base + 4) << 32;
+    *out = (word >> shift) & ((size == 8) ? ~0ULL : ((1ULL << (size * 8)) - 1));
+    return true;
+}
+
+bool virtio_store(void *dev, u64 off, u32 size, u64 val) {
+    virtio *v = (virtio *)dev;
+    if (size == 0 || size > 4 || (size & (size - 1)))
+        return false;
+
+    if (off >= REG_CONFIG) {
+        u32 coff = (u32)(off - REG_CONFIG);
+        u8 buf[4];
+        memcpy(buf, &val, size);
+        if (v->be->write_config)
+            v->be->write_config(v, coff, size, buf);
+        return true;
+    }
+
+    u32 base = (u32)(off & ~3ULL);
+    u32 shift = (u32)((off & 3) * 8);
+    u32 w = (u32)val;
+    if (size != 4) {
+        u32 mask = (1u << (size * 8)) - 1;
+        w = (virtio_reg_read(v, base) & ~(mask << shift)) | ((w & mask) << shift);
+    }
+    virtio_reg_write(v, base, w);
     return true;
 }
 
