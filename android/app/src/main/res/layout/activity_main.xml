@@ -4,7 +4,7 @@
 
   One vertical LinearLayout: a header that carries the name, the status and the
   menu, then the console, then the helper keys.  There is no toolbar of action
-  buttons any more -- Boot, Stop, Kernel, Disk and Initrd live in the menu the
+  buttons any more: Boot, Stop, Kernel, Disk and Initrd live in the menu the
   header opens, and the key row only exists while the soft keyboard is up.  A
   terminal wants every line it can get: 80 columns on a phone is already tight,
   and a permanent row of buttons was costing three of them.
