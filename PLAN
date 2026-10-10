@@ -11,7 +11,7 @@ tested. A step that leaves the tree red is not finished.
 	step 6	PLIC				done
 	step 7	virtio-blk			done; chains were truncated at 16 descs, fixed
 	step 8	boot Debian			verified: /init hands off to sysvinit on the disk
-	step 9	virtio-net			verified in-guest: DNS + TCP through the NAT
+	step 9	virtio-net			verified in-guest: DNS, TCP, and a 12.9 MB fetch
 	step 10	virtio-gpu, virtio-input	not started
 	step 11	virtio-snd			not started
 	step 12	hot block JIT			not started
@@ -230,6 +230,22 @@ On the host, for the TAP path:
 	ip addr add 10.0.2.1/24 dev rvm0
 	echo 1 > /proc/sys/net/ipv4/ip_forward
 	iptables -t nat -A POSTROUTING -s 10.0.2.0/24 -j MASQUERADE
+
+The relay also has to behave like a sender, not a pipe.  It used to take
+whatever recv() returned, hand it down and forget it; if the guest had no RX
+descriptor posted the frame was dropped, and if the queue in front of the device
+was full the frame was never queued at all.  Nothing re-sent either one, so a
+transfer died a few dozen frames in -- a resolver answer and a 22 KB Release
+file were fine, which is how this survived every test until apt.  So the relay
+reads the guest's acknowledgement out of every segment it receives, stops reading
+the socket once 65280 bytes are unacknowledged (the ceiling without window
+scaling, and the guest's own scaling request is not honoured because the
+handshake never offers it), keeps that much unacked data so a hole can be filled
+by replaying from the first byte the guest is missing, and holds a refused frame
+at the head of its queue instead of losing it.  Patience is deliberate: a guest on
+a phone is slow, not broken, so replays keep coming and the idle timer decides
+when a connection is over.  tests/test_net.c drives 120 KB through it with a fake
+guest that refuses frames and loses segments.
 
 tools/run.sh --net does all of it. Acceptance is that apt update, curl, wget,
 ssh out and ping work inside the guest.
