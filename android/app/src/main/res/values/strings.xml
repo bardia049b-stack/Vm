@@ -20,4 +20,6 @@
     <string name="debug_off">Debug log: off</string>
     <string name="menu_glyph">\u2261</string>
     <string name="machine">Machine…</string>
+    <string name="shell_on">Boot to shell: on</string>
+    <string name="shell_off">Boot to shell: off</string>
 </resources>

@@ -6,6 +6,32 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+0.3.14.  The reason a phone boot never finished, and the reason it looked like a
+hang rather than a wait.
+
+android/app: the app now holds a wake lock while a VM runs.  There was none anywhere
+in it - no `FLAG_KEEP_SCREEN_ON`, no `PowerManager.WakeLock` - so the moment the
+screen timed out Android stopped scheduling the vCPU thread, and a boot that needs
+tens of minutes of continuous CPU on a phone stopped mid-init with no error
+anywhere: the console simply stopped arriving at whatever line it happened to be
+on, which is exactly what "the shell never comes up" looks like from the outside.
+A partial wake lock keeps the CPU awake with the screen off and `FLAG_KEEP_SCREEN_ON`
+keeps the console lit while it is being watched; both are released when the VM
+stops.  The lock is capped at eight hours so a `stop()` that never runs cannot
+carry a phone through the night.  Every guide to running a Linux guest on Android
+says this is the one thing not to skip; we had skipped it.
+
+android/app: the status line counts.  It used to print "no output from the guest
+yet" once, eight seconds in, and then stay silent for as long as the guest was
+silent - which is hours.  It now reports elapsed time every 10 s ("booting, 4m10s",
+"running, 12m03s"), and after 90 s of no output it names the control that skips the
+wait: menu -> Boot to shell.
+
+android/app: that menu item now exists as a toggle.  It rewrites the same
+`ram=1536 cpu=1 shell=1` line the Machine dialog edits, so there is no setting that
+lives in one place and is missing from the other.
+
+
 0.3.13.  One more thing that had to be in the APK for the last one to work at all.
 
 android/app: the built-in initramfs replaces itself.  `ensureBuiltinInitrd` unpacked

@@ -117,6 +117,10 @@ The app also has a machine line: menu -> Machine edits `ram=1536 cpu=1`, clamped
 to 256-4096 MiB and remembered between runs, and the value reaches `vmCreate`.
 After Boot the console prints the sizes the VM really got.
 
+The app holds a `PARTIAL_WAKE_LOCK` while a VM is running: without one Android
+stops scheduling the vCPU thread when the screen times out, and a boot that needs
+tens of minutes of CPU on a phone simply halts mid-init, silently.
+
 Adding `shell=1` to that line skips the disk's init scripts and hands the console
 to its `/bin/sh` instead (the initramfs' `rvm.shell=root`), which is the difference
 between a prompt in ten seconds and a silent minute or two on a phone: enough to

@@ -19,11 +19,13 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.StatFs;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.PopupMenu;
@@ -63,6 +65,9 @@ public final class MainActivity extends Activity {
     private int ramMib = 1536;
     private int harts = 1;
     private boolean shellFirst;
+    /* Held for as long as a VM runs: see startKeepAwake(). */
+    private PowerManager.WakeLock wake;
+    private long bootAt;
     private String specRaw = "ram=1536 cpu=1";
     private boolean debug;
     private File kernel, disk, initrd;
@@ -283,6 +288,7 @@ public final class MainActivity extends Activity {
          * as the item id: that is what onMenuItemClick compares on. */
         int act = (vmThread != null) ? R.string.stop : R.string.boot;
         int dbg = debug ? R.string.debug_on : R.string.debug_off;
+        int sh = shellFirst ? R.string.shell_on : R.string.shell_off;
         int order = 0;
         menu.getMenu().add(0, act, order++, act);
         menu.getMenu().add(0, R.string.kernel, order++, R.string.kernel);
@@ -290,6 +296,7 @@ public final class MainActivity extends Activity {
         menu.getMenu().add(0, R.string.initrd, order++, R.string.initrd);
         menu.getMenu().add(0, R.string.machine, order++, R.string.machine);
         menu.getMenu().add(0, R.string.clear, order++, R.string.clear);
+        menu.getMenu().add(0, sh, order++, sh);
         menu.getMenu().add(0, dbg, order++, dbg);
         menu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
             @Override public boolean onMenuItemClick(android.view.MenuItem item) {
@@ -300,6 +307,18 @@ public final class MainActivity extends Activity {
                 else if (id == R.string.disk) pick(PICK_DISK);
                 else if (id == R.string.initrd) pick(PICK_INITRD);
                 else if (id == R.string.machine) askMachine();
+                /* One switch, one line of text: the toggle edits the same Machine
+                 * line the dialog does, so there is never a setting that exists in
+                 * one place and not the other. */
+                else if (id == R.string.shell_on || id == R.string.shell_off) {
+                    String next = shellFirst
+                        ? specRaw.replaceAll("(?i)\\s*shell\\s*=\\s*1", "")
+                        : specRaw.trim() + " shell=1";
+                    applySpec(next);
+                    saveSpec(next.trim());
+                    toast(shellFirst ? "boot to shell: on - the init scripts are skipped"
+                                      : "boot to shell: off - normal boot");
+                }
                 else if (id == R.string.clear) console.clear();
                 else if (id == R.string.debug_on || id == R.string.debug_off) {
                     debug = !debug;
@@ -390,13 +409,10 @@ public final class MainActivity extends Activity {
                               : "\n"));
         sawOutput = false;
         status.setText(debug ? "starting, debug log on…" : "starting…");
-        ui.postDelayed(new Runnable() {
-            @Override public void run() {
-                if (vm != 0 && !sawOutput) {
-                    status.setText("running, no output from the guest yet");
-                }
-            }
-        }, 8000);
+        bootAt = System.currentTimeMillis();
+        startKeepAwake();
+        ui.removeCallbacks(beat);
+        ui.postDelayed(beat, 10000);
         final String k = kernel.getAbsolutePath();
         final String d = disk.exists() ? disk.getAbsolutePath() : null;
         final String i = initrd.exists() ? initrd.getAbsolutePath() : null;
@@ -453,6 +469,8 @@ public final class MainActivity extends Activity {
         long h = vm;
         if (h != 0) RvmNative.vmStop(h);
         else toast("not running");
+        releaseKeepAwake();
+        ui.removeCallbacks(beat);
     }
 
     /* --------------------------------------------------------- file picking */
@@ -654,6 +672,51 @@ public final class MainActivity extends Activity {
         ui.post(new Runnable() {
             @Override public void run() { status.setText("copying " + name + ": " + human(bytes)); }
         });
+    }
+
+    /* Silence is what makes a phone look broken: the guest can sit inside one
+     * init script for minutes and prints nothing while it does, and a status line
+     * that goes quiet forever is indistinguishable from a dead emulator.  So say
+     * the boring true thing every 10 s - elapsed time, and whether a byte has
+     * come back yet - and once the wait is long enough, name the one control that
+     * makes the wait unnecessary. */
+    private final Runnable beat = new Runnable() {
+        @Override public void run() {
+            if (vmThread == null) { releaseKeepAwake(); return; } /* the guest powered off */
+            long s = (System.currentTimeMillis() - bootAt) / 1000;
+            String el = (s / 60) + "m" + (s % 60 < 10 ? "0" : "") + (s % 60) + "s";
+            status.setText(sawOutput
+                ? "running, " + el
+                : "booting, " + el + (s > 90
+                    ? " - still silent; menu -> Boot to shell skips the init scripts" : ""));
+            ui.postDelayed(this, 10000);
+        }
+    };
+
+    /* PARTIAL_WAKE_LOCK keeps the CPU running with the screen off; the screen flag
+     * keeps it on while the console is being watched, which is also when the user
+     * is typing.  Both are released when the VM stops, so an idle app costs the
+     * battery nothing. */
+    private void startKeepAwake() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        try {
+            if (wake == null) {
+                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+                wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "rvm:vm");
+                wake.setReferenceCounted(false);
+            }
+            if (!wake.isHeld())
+                wake.acquire(8 * 60 * 60 * 1000L); /* capped: a lost stop() cannot burn a battery overnight */
+        } catch (Exception e) {
+            status.setText("no wake lock - keep the screen on or the guest will stall");
+        }
+    }
+
+    private void releaseKeepAwake() {
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        try {
+            if (wake != null && wake.isHeld()) wake.release();
+        } catch (Exception ignored) { }
     }
 
     private void banner(String s) { console.write(s.getBytes(), s.getBytes().length); }

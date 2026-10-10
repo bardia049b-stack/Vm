@@ -19,6 +19,10 @@
          image lives in filesDir, not in the APK, so install location is not
          what this is for. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- A boot on a phone is measured in tens of minutes of continuous CPU.  With
+         no wake lock Android stops scheduling the vCPU thread when the screen
+         times out, and the guest halts mid-boot with no error anywhere. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- A keyboard and a touchscreen are both optional: RVM drives everything
          through the on-screen helper keys. -->
