@@ -6,6 +6,42 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+0.3.12.  Again nothing to re-download: the change is in the APK and in the
+initramfs the APK carries.  Two bugs found on the way are part of the story, so
+they are written down where the next person will look.
+
+tools/mkinitrd.sh, android/app/src/main/assets/initrd.img: `/init` now honours
+`rvm.shell=root`.  The trigger for this was a phone sitting at `INIT: No inittab.d
+directory found` with the obvious suggestion of `init=/bin/sh` on the kernel
+command line - which does nothing here, measured: with an initramfs that has its
+own `/init`, the kernel runs `/init`, and `/init` is what mounts the disk and
+hands the console over, so the boot with that flag was identical to the boot
+without it (prompt at 222 s either way).  The wait it was aimed at is real
+though: sysvinit's first line to the autologin prompt is ~100 s of wall clock on
+a desktop sandbox, minutes on a phone, and the console stays silent for all of it,
+which is indistinguishable from a hang.  `rvm.shell=root` therefore runs the
+whole hand-off - mount, move in /dev /proc /sys, keep the DHCP lease, seed
+resolv.conf - and then execs the disk's `/bin/sh` instead of `/sbin/init`: a real
+Debian prompt with ping, dpkg and apt working in seconds.  What it gives up is
+every service, by design; drop the flag for a normal boot.
+
+tools/mkinitrd.sh: `/init` reads the kernel command line once at the top into
+`CMDLINE` and dispatches on it, instead of grepping `/proc/cmdline` where it
+happens to be needed.  The first build of `rvm.shell=root` did nothing at all, and
+the reason was the hand-off itself: `mount --move /proc /newroot/proc` runs before
+the check, so by then `/proc/cmdline` is not in the initramfs' root any more, and
+`grep -qs` reports that by returning 2 - quietly, in the one place where a
+complaint was wanted.  Measured, not reasoned about: the console printed `handing
+the console over` and no `rvm.shell=root` line, while the kernel's own
+`Kernel command line:` in dmesg showed the flag present.  A failed `exec` is given
+a message too, for the same reason: a shell that cannot be exec'd used to fall
+through into `/sbin/init` and look like an ignored option.
+
+android/app: `shell=1` in the Machine line selects it, so the machine spec is the
+one place a boot is configured; the Ready banner prints `shell: root - the disk's
+init scripts are skipped` so a log says which of the two boots happened.
+
+
 0.3.11.  Every change below is in the APK: a phone that already has `Image` and
 `disk.img` from v0.3.10 installs the new app and nothing else.
 

@@ -250,6 +250,14 @@ guest that refuses frames and loses segments.
 tools/run.sh --net does all of it. Acceptance is that apt update, curl, wget,
 ssh out and ping work inside the guest.
 
+Status as of 0.3.12: `rvm.shell=root` (selected by `shell=1` in the app's Machine
+line) skips the disk's init scripts and drops into the Debian shell with the lease
+and resolv.conf already in place, because "the console says nothing for two
+minutes" was being read as a hang.  `init=/bin/sh` on the kernel command line, the
+first idea for the same complaint, does nothing: with an initramfs that has /init
+the kernel runs /init, so the flag never reaches the disk - measured, 222 s to the
+prompt with and without it.
+
 Status as of 0.3.11: ping, DNS, curl (138 612 B and 12 910 137 B twice) and
 apt's install/dpkg paths work in the shipped image.  `apt-get update` does not:
 it aborts with `std::bad_alloc` inside apt a few seconds in, before the first

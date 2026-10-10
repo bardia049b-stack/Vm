@@ -62,6 +62,7 @@ public final class MainActivity extends Activity {
     /* The machine, from the `ram=1536 cpu=1` line in menu -> Machine. */
     private int ramMib = 1536;
     private int harts = 1;
+    private boolean shellFirst;
     private String specRaw = "ram=1536 cpu=1";
     private boolean debug;
     private File kernel, disk, initrd;
@@ -360,7 +361,9 @@ public final class MainActivity extends Activity {
         console.clear();
         banner("Ready.\n  kernel: " + human(kernel.length())
                + "\n  disk:   " + (disk.exists() ? human(disk.length()) : "none")
-               + "\n  ram:    " + ramMib + " MiB\n  cpu:    " + harts + "\n");
+               + "\n  ram:    " + ramMib + " MiB\n  cpu:    " + harts
+               + (shellFirst ? "\n  shell:  root - the disk's init scripts are skipped\n"
+                              : "\n"));
         sawOutput = false;
         status.setText(debug ? "starting, debug log on…" : "starting…");
         ui.postDelayed(new Runnable() {
@@ -385,7 +388,8 @@ public final class MainActivity extends Activity {
          * scheduled, which is what happens while a two gigabyte file is still
          * being copied or the screen is off. */
         final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 "
-            + "root=/dev/vda rootwait rw nosoftlockup rvm.time=virtual";
+            + "root=/dev/vda rootwait rw nosoftlockup rvm.time=virtual"
+            + (shellFirst ? " rvm.shell=root" : "");
 
         vmThread = new Thread(new Runnable() {
             @Override public void run() {
@@ -492,6 +496,7 @@ public final class MainActivity extends Activity {
     static final class MachineSpec {
         int ramMib = 1536;
         int cpus = 1;
+        boolean shell;
     }
 
     /**
@@ -510,6 +515,13 @@ public final class MainActivity extends Activity {
             if (m.group(2) != null)
                 sp.cpus = Math.max(1, Integer.parseInt(m.group(2)));
         }
+        /* `shell=1` (or `shell=root`) skips the disk's init scripts and keeps the
+         * shell the hand-off would otherwise give to /sbin/init: on a phone the
+         * runlevel-S work is minutes of silent console, which is indistinguishable
+         * from a hang.  See the rvm.shell=root block in tools/mkinitrd.sh - it
+         * travels in the same line as ram and cpu so a broken boot has one place
+         * to look at, not two. */
+        sp.shell = Pattern.compile("(?i)shell\\s*=\\s*(1|root)\\b").matcher(raw).find();
         /* One hart is all the emulator has today (PLAN step 2), so the parsed
          * count is folded back to 1 rather than ignored: the field already
          * exists, and the second core needs no new dialog. */
@@ -526,6 +538,7 @@ public final class MainActivity extends Activity {
         MachineSpec sp = parseSpec(raw);
         ramMib = sp.ramMib;
         harts = sp.cpus;
+        shellFirst = sp.shell;
         specRaw = (raw == null || raw.trim().isEmpty()) ? "ram=" + ramMib + " cpu=1" : raw.trim();
     }
 
@@ -542,7 +555,7 @@ public final class MainActivity extends Activity {
         field.setSelection(specRaw.length());
         new AlertDialog.Builder(this)
             .setTitle("Machine")
-            .setMessage("ram=1536 cpu=1  (applies on the next Boot)")
+            .setMessage("ram=1536 cpu=1 - add shell=1 for a root shell with no init scripts")
             .setView(field)
             .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface d, int w) {

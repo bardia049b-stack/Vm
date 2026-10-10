@@ -117,3 +117,8 @@ The app also has a machine line: menu -> Machine edits `ram=1536 cpu=1`, clamped
 to 256-4096 MiB and remembered between runs, and the value reaches `vmCreate`.
 After Boot the console prints the sizes the VM really got.
 
+Adding `shell=1` to that line skips the disk's init scripts and hands the console
+to its `/bin/sh` instead (the initramfs' `rvm.shell=root`), which is the difference
+between a prompt in ten seconds and a silent minute or two on a phone: enough to
+run apt, ping and dpkg, not enough to have any service running.
+

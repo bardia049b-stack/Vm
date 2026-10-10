@@ -91,7 +91,17 @@ chmod 755 "$WORK/rootfs/usr/share/udhcpc/default.script"
 cat > "$WORK/rootfs/init" <<'INIT'
 #!/bin/sh
 /bin/busybox --install -s /bin
+
 mount -t proc proc /proc
+# Read the kernel command line once, here, into a variable.  /proc is moved into
+# the new root during the hand-off below, so any later grep of /proc/cmdline reads
+# a file that is no longer there - and with -qs that failure is silent, which is
+# how an rvm.shell=root request used to be dropped without a word.
+CMDLINE=$(cat /proc/cmdline 2>/dev/null)
+case "$CMDLINE" in
+*rvm.shell=1*) SHELL_MODE=initramfs ;;
+*rvm.shell=root*) SHELL_MODE=root ;;
+esac
 mount -t sysfs sys /sys
 mount -t devtmpfs dev /dev 2>/dev/null
 # Without a lease script udhcpc never applies the address it obtains.
@@ -105,8 +115,9 @@ fi
 # The initramfs is a debug shell *and* the hand-off into a real rootfs.  A disk
 # with /sbin/init takes over as soon as it mounts, so kernel + disk lands in
 # Debian instead of stopping here -- which is what "apt: not found" on a phone
-# has always meant.  Pass rvm.shell=1 on the kernel command line to stay here.
-if ! grep -qs 'rvm.shell=1' /proc/cmdline; then
+# has always meant.  Pass rvm.shell=1 on the kernel command line to stay here,
+# or rvm.shell=root to take the disk's own shell instead of its init scripts.
+if [ "$SHELL_MODE" != initramfs ]; then
 	mkdir -p /newroot
 	if mount /dev/vda /newroot 2>/dev/null || mount /dev/vda1 /newroot 2>/dev/null; then
 		if [ -x /newroot/sbin/init ]; then
@@ -127,6 +138,26 @@ if ! grep -qs 'rvm.shell=1' /proc/cmdline; then
 			# initramfs to look a particular way and prints its usage when it
 			# does not, which leaves a phone in a shell with no reason given.
 			# The initramfs stays mounted and costs 1.6 MB nobody misses.
+			#
+			# rvm.shell=root runs everything above and then hands the console to
+			# the disk's shell rather than to /sbin/init.  This exists because a
+			# phone spends minutes inside the init scripts in silence - from
+			# sysvinit's first line to the autologin prompt measured 100 s of wall
+			# clock on a desktop sandbox, and the screen says nothing while they
+			# run - which reads exactly like a hang.  A shell lands in the same
+			# mounted root, with /dev, /proc and /sys already moved in and the
+			# DHCP lease still in kernel state, so apt, dpkg and ping work from
+			# the first second.  What it does not have is any service: nothing
+			# was started, so a shell here is a repair shop, not the boot.
+			if [ "$SHELL_MODE" = root ]; then
+				echo "=== rvm initramfs: rvm.shell=root, /sbin/init skipped ==="
+				exec setsid cttyhack chroot /newroot /bin/sh -i
+				# Reaching this line means the exec failed: say so before the
+				# boot carries on, because a silent fall-through is what made
+				# the first version of this flag look ignored for a whole
+				# boot.
+				echo "=== rvm initramfs: no shell to exec, booting /sbin/init instead ==="
+			fi
 			exec chroot /newroot /sbin/init console=ttyS0
 		fi
 		umount /newroot 2>/dev/null
