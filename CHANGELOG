@@ -37,9 +37,12 @@ have idle timers -- without them the table filled on the seventeenth lookup and
 the network was dead for the rest of the boot. macOS has no MSG_DONTWAIT; the
 guard that covers it is what the macos job was failing on.
 
-tools/mkinitrd.sh: /init switches root into /dev/vda when the disk has an
-/sbin/init, so kernel plus disk lands in Debian instead of a busybox shell with
-no apt; rvm.shell=1 asks for the shell on purpose. .github/workflows/rootfs.yml
+tools/mkinitrd.sh: /init hands the console over to the disk -- /dev, /proc and
+/sys moved with mount --move, then chroot to /sbin/init -- when the disk has one,
+so kernel plus disk lands in Debian instead of a busybox shell with no apt.
+busybox switch_root is deliberately not used: it printed its usage here and left
+no reason behind, which is a bad thing to discover over a serial line.
+rvm.shell=1 asks for the shell on purpose. .github/workflows/rootfs.yml
 gives the image eth0 with DHCP and installs ifupdown, iproute2, isc-dhcp-client,
 iputils-ping, curl and wget, so the guest has a route to that NAT. kernel.yml
 publishes initrd.img beside the Image and release.yml says what each file is.

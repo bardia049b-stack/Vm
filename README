@@ -100,8 +100,8 @@ The default cmdline is `console=ttyS0 earlycon=ns16550a,mmio32,0x10000000
 root=/dev/vda rootwait rw` -- no `init=` anywhere. What decides whether you get
 a shell is the initrd: `tools/mkinitrd.sh` builds a busybox initramfs whose /init
 brings eth0 up through the built-in NAT and then, if /dev/vda has an /sbin/init,
-switches root into it. Put `rvm.shell=1` on --bootargs to keep the initramfs
-shell and skip the hand-off.
+hands the console over to it, so you land in the distro. Put `rvm.shell=1` on
+--bootargs to keep the initramfs shell and skip the hand-off.
 
 The APK ships that same initramfs as an asset, so on a phone Kernel and Disk is
 all there is to pick.
