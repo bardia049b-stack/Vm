@@ -106,15 +106,25 @@ jobs:
           # survivable: the initramfs already left an address and a route on the
           # interface, and those walk into the new root untouched.
           sudo tee /srv/rootfs/etc/dhcp/dhclient.conf > /dev/null <<'DHCPC'
-          timeout bootp 15;
-          timeout retry 15;
-          reboot 5;
-          backoff-cutoff 5;
+          timeout 15;
+          retry 5;
+          reboot 3;
+          backoff-cutoff 2;
           initial-interval 2;
-          select retry-times 2;
           request subnet-mask, routers, domain-name-servers, host-name;
           DHCPC
-          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec 'grep -q "timeout retry 15" /etc/dhcp/dhclient.conf'
+          # Checked against dhclient's own parser rather than a grep: the first
+          # version of this file used dhcpd statements (timeout bootp, select
+          # retry-times), dhclient complained about them on the console and then
+          # carried on with its five-minute default, which is worse than not
+          # shipping the file at all.
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec '
+            grep -q "^timeout 15;" /etc/dhcp/dhclient.conf
+            out=$(dhclient -t 1 -cf /etc/dhcp/dhclient.conf 2>&1 || true)
+            case "$out" in
+              *semicolon*|*Expecting*|*syntax*|*unexpected*) echo "dhclient.conf: $out"; exit 1 ;;
+            esac
+          '
 
       - name: enable networking at boot
         run: |
