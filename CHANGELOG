@@ -6,6 +6,14 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+.github/workflows/rootfs.yml: clear the last-change date from every /etc/shadow
+entry after chpasswd.  pam_unix rejects an account whose password is dated in the
+future, and on a CI-built image the guest clock (no RTC) is always behind the
+runner that stamped the file, which is why the console reported unix_chkpwd:
+password check failed for user (root) for the correct password.  An empty field
+means no aging information at all, so the check cannot depend on the clock, and
+the assertion in the step keeps it that way.
+
 src/devices/net_user.c: the NAT queue is 256 frames deep and the send window is
 the largest this handshake can express (65280 bytes, since the relay does not
 negotiate window scaling).  Correctness came with the tail buffer above; speed

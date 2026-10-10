@@ -58,6 +58,21 @@ jobs:
             echo 'sysfs /sys sysfs defaults 0 0' >> /etc/fstab
           "
 
+      # pam_unix refuses an account whose shadow entry says the password was
+      # changed in the future -- and a CI-built image always looks like that to a
+      # guest with no RTC: chpasswd stamped the runner's date, while the guest
+      # clock starts behind it.  That is what "unix_chkpwd: password check failed
+      # for user (root)" meant: the password was right and the date was not.
+      # Emptying the last-change field takes the clock out of the check (man 5
+      # shadow: no aging information), and doing it here on the host keeps the
+      # expression out of the chroot's quoting problem.
+      - name: keep shadow aging off the console
+        run: |
+          set -e
+          sudo sed -i -E 's/^([^:]+):([^:]*):[0-9]+:/\1:\2::/' /srv/rootfs/etc/shadow
+          sudo grep -qE '^root:[^:]*::' /srv/rootfs/etc/shadow
+          echo "shadow: last-change field cleared, so no account is dated in the future"
+
       # The emulator's userspace NAT answers ARP, DHCP and DNS for
       # 10.0.2.15/24 with the gateway on 10.0.2.2 and the resolver on
       # 10.0.2.3 (see src/devices/net_user.c).  None of that reaches the guest
