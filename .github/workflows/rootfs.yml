@@ -51,7 +51,7 @@ jobs:
             apt-get update
             apt-get install -y --no-install-recommends sysvinit-core ifupdown isc-dhcp-client iproute2 iputils-ping curl wget ca-certificates e2fsprogs
             echo 'root:root' | chpasswd
-            echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> /etc/inittab
+            echo 'T0:23:respawn:/sbin/getty -L -a root ttyS0 115200 vt100' >> /etc/inittab
             echo 'rvm' > /etc/hostname
             echo '/dev/vda / ext4 defaults,nofail 0 0' > /etc/fstab
             echo 'proc /proc proc defaults 0 0' >> /etc/fstab
@@ -90,6 +90,14 @@ jobs:
           nameserver 10.0.2.3
           options timeout:1 attempts:2
           RESOLV
+          # getty must carry -a: a password prompt on this console is a dead end
+          # waiting to happen, because login verifies through unix_chkpwd, which
+          # only reads /etc/shadow by virtue of its setgid bit, and that bit is a
+          # function of how the initramfs happened to mount the root.  The
+          # maintenance prompt worked with the same password while login rejected
+          # it, which is exactly the shape of that failure.
+          sudo grep -q "getty -L -a root ttyS0" /srv/rootfs/etc/inittab
+
           # The acceptance test for PLAN step 9, run here so a green build means
           # the image really carries the pieces the guest boots with, and not
           # just that an ext4 file packed.  The rcS.d link is the one worth

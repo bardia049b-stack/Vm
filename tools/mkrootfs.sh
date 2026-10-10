@@ -14,8 +14,8 @@
 #   2. runs debootstrap --variant=minbase for riscv64 under qemu-user-static
 #   3. finishes the second stage inside the chroot
 #   4. swaps systemd for sysvinit-core (RVM has no cgroup/namespace support)
-#   5. writes inittab, fstab, hostname, hosts, a root password and getty on
-#      ttyS0
+#   5. writes inittab, fstab, hostname, hosts, a root password and a getty on
+#      ttyS0 that logs root straight in
 #   6. creates an ext4 image with mke2fs -d, which needs no loop device
 #
 # The result boots to "rvm login:" with:
@@ -150,7 +150,7 @@ id:3:initdefault:
 si::sysinit:/etc/init.d/rcS
 
 # Serial console: one getty, no respawn storm if it dies instantly.
-T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100
+T0:23:respawn:/sbin/getty -L -a root ttyS0 115200 vt100
 
 # Only ask for ctrl-alt-delete handling; RVM has no keyboard device yet.
 ca:12345:ctrlaltdel:/sbin/shutdown -t1 -a -r now

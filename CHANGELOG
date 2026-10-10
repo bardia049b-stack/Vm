@@ -6,6 +6,15 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+rootfs.yml, tools/mkrootfs.sh: the serial console getty runs -a root.  Asking for
+a password there was a dead end rather than a security measure: login verifies
+through unix_chkpwd, which reads /etc/shadow only by way of its setgid bit, and
+in the released image that path failed (password check failed for root) while
+sysvinit's own maintenance prompt accepted the very same password.  A VM console
+on your own handset is the maintainer's console, which is what every cloud image
+assumes too.  The password still exists for ssh or su, and inittab is asserted so
+the flag cannot silently go back.
+
 rootfs.yml: eth0 is manual in /etc/network/interfaces, and the initramfs is what
 owns the address.  Having ifupdown run a DHCP client at boot put the login prompt
 behind that client's own behaviour -- ISC's dhclient printed its banner, then
