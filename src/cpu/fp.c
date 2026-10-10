@@ -34,7 +34,7 @@
 #define FP_SGNJ   0x04
 #define FP_MINMAX 0x05
 #define FP_CVTSD  0x08 /* fcvt.s.d / fcvt.d.s */
-#define FP_CMP    0x09 /* feq / flt / fle       */
+#define FP_CMP    0x14 /* feq / flt / fle: funct7 10100|fmt, >>2 = 0x14 */
 #define FP_SQRT   0x0B
 #define FP_F2I    0x18
 #define FP_I2F    0x1A

@@ -108,9 +108,9 @@
 /* Default delegations installed by the built-in M-mode shim so that Linux
  * (which runs in S-mode) sees its own page faults, syscalls and interrupts. */
 #define RVM_MEDELEG_DEFAULT                                                                        \
-    ((1ULL << 0) | (1ULL << 1) | (2ULL << 2) | (1ULL << 4) | (1ULL << 5) | (1ULL << 6) |           \
-     (1ULL << 7) | (1ULL << 8) | (1ULL << 12) | (1ULL << 13) | (1ULL << 14) | (1ULL << 15) |       \
-     (1ULL << 18) | (1ULL << 19) | (1ULL << 20) | (1ULL << 21))
+    ((1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5) |           \
+     (1ULL << 6) | (1ULL << 7) | (1ULL << 8) | (1ULL << 12) | (1ULL << 13) | (1ULL << 14) |        \
+     (1ULL << 15) | (1ULL << 18) | (1ULL << 19) | (1ULL << 20) | (1ULL << 21))
 #define RVM_MIDELEG_DEFAULT (MIP_SSIP | MIP_STIP | MIP_SEIP)
 
 /* Exception cause codes */

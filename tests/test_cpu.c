@@ -1167,6 +1167,27 @@ void test_cpu_fp(void) {
         CHECK_U64(t.cpu.x[X_S1], 1);
         th_free(&t);
     }
+    /* Double comparisons: flt.d is what SIGILLed busybox ping. */
+    {
+        th t;
+        CHECK(th_init(&t) == RVM_OK);
+        t.cpu.f[0] = d2b(3.0);
+        t.cpu.f[1] = d2b(4.0);
+        th_emit(&t, FEQ_D(X_T0, 0, 1));
+        th_emit(&t, FLT_D(X_T1, 0, 1));
+        th_emit(&t, FLE_D(X_T2, 1, 0));
+        th_emit(&t, FEQ_D(X_S0, 0, 0));
+        th_emit(&t, FLE_D(X_S1, 0, 0));
+        th_emit(&t, FLT_D(X_A0, 1, 0));
+        th_run_all(&t);
+        CHECK_U64(t.cpu.x[X_T0], 0);
+        CHECK_U64(t.cpu.x[X_T1], 1);
+        CHECK_U64(t.cpu.x[X_T2], 0);
+        CHECK_U64(t.cpu.x[X_S0], 1);
+        CHECK_U64(t.cpu.x[X_S1], 1);
+        CHECK_U64(t.cpu.x[X_A0], 0);
+        th_free(&t);
+    }
     /* An improperly boxed single must read back as the canonical NaN. */
     {
         th t;
