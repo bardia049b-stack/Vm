@@ -6,6 +6,18 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+0.3.13.  One more thing that had to be in the APK for the last one to work at all.
+
+android/app: the built-in initramfs replaces itself.  `ensureBuiltinInitrd` unpacked
+the asset only when the file was missing, so every install that had ever booted kept
+the `/init` of the APK it first arrived with, and `rvm.shell=root` - measured here at
+52 s to a Debian prompt instead of 222 s - would do nothing on exactly the phones it
+was written for.  There is no error for that: an old `/init` does not reject a word it
+has never heard, it ignores it, which is how an app ends up looking like it is
+ignoring its own settings.  The asset now carries a revision against a constant in
+MainActivity and is re-unpacked when they disagree (1.6 MB, renamed over the old copy
+so no boot can find the file missing), and an initrd picked from storage is marked as
+the user's and left alone forever.
 0.3.12.  Again nothing to re-download: the change is in the APK and in the
 initramfs the APK carries.  Two bugs found on the way are part of the story, so
 they are written down where the next person will look.

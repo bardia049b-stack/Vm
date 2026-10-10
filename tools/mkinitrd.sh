@@ -15,7 +15,9 @@
 # NAT and drops into a shell with a controlling tty, so line editing and
 # echo behave like a real terminal.  The same archive ships inside the
 # Android APK as an asset; copy it over android/app/src/main/assets/ when
-# busybox moves on.
+# busybox moves on - and bump INITRD_REV in MainActivity.java in the same commit,
+# or a phone that already unpacked the old asset will keep running it and the new
+# /init's features will be silently absent (see the 0.3.13 entry in CHANGELOG).
 #
 set -euo pipefail
 

@@ -328,22 +328,46 @@ public final class MainActivity extends Activity {
      * to a shell with a working tty.  Copied out on first run; a file the
      * user picks later simply replaces it.
      */
+    /* The initramfs is behaviour, not bulk: the lease script, the hand-off into
+     * the disk and rvm.shell=root all live in its /init.  Unpacking it only when
+     * the file is missing means an install that has ever booted keeps the /init of
+     * whatever APK it first came with, and a flag that /init does not know about is
+     * not rejected, it is simply not acted on - which is the worst possible
+     * failure, because the app then looks like it is ignoring its own settings.
+     * So the asset carries a revision and re-unpacks when they disagree: 1.6 MB
+     * against a silent misboot. */
+    private static final int INITRD_REV = 1;
+    /* An initrd picked from storage is the user's file, not ours to refresh. */
+    private static final int INITRD_PICKED = -1;
+
     private void ensureBuiltinInitrd() {
-        if (initrd.exists()) return;
+        final int rev = getSharedPreferences("rvm", MODE_PRIVATE).getInt("initrd_rev", 0);
+        if (rev == INITRD_PICKED || (rev == INITRD_REV && initrd.exists()))
+            return;
+        final File tmp = new File(initrd.getParentFile(), initrd.getName() + ".new");
+        boolean ok = false;
         java.io.InputStream in = null;
         java.io.OutputStream out = null;
         try {
             in = getAssets().open("initrd.img");
-            out = new java.io.FileOutputStream(initrd);
+            out = new java.io.FileOutputStream(tmp);
             byte[] buf = new byte[65536];
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.close();
+            out = null;
+            /* rename(2) replaces, so the working copy is never absent: a Boot that
+             * starts during this second either sees the old /init or the new one. */
+            ok = tmp.renameTo(initrd);
         } catch (java.io.IOException e) {
-            initrd.delete();
+            ok = false;
         } finally {
-            try { if (in != null) in.close(); } catch (java.io.IOException ignored) { }
-            try { if (out != null) out.close(); } catch (java.io.IOException ignored) { }
+            close(in); close(out);
+            if (!ok) tmp.delete(); /* and the previous copy is still in place */
         }
+        if (ok)
+            getSharedPreferences("rvm", MODE_PRIVATE).edit()
+                .putInt("initrd_rev", INITRD_REV).apply();
     }
 
     private void startVm() {
@@ -605,6 +629,11 @@ public final class MainActivity extends Activity {
                     @Override public void run() {
                         status.setText(ok ? dest.getName() + ": " + human(size)
                                           : "copy failed (not enough space?)");
+                        /* Whatever is in that file now came from the picker, so the
+                         * built-in asset stops claiming it (see ensureBuiltinInitrd). */
+                        if (ok && dest == initrd)
+                            getSharedPreferences("rvm", MODE_PRIVATE).edit()
+                                .putInt("initrd_rev", INITRD_PICKED).apply();
                     }
                 });
             }
