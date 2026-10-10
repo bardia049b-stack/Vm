@@ -153,6 +153,14 @@ if [ "$SHELL_MODE" != initramfs ]; then
 			# was started, so a shell here is a repair shop, not the boot.
 			if [ "$SHELL_MODE" = root ]; then
 				echo "=== rvm initramfs: rvm.shell=root, /sbin/init skipped ==="
+				# The hand-off just moved the only /dev out from under us, and
+				# cttyhack looks for the console by name (/dev/ttyS0, from
+				# `console=` on the kernel line).  Without it the shell still
+				# runs - "can't access tty; job control turned off" - but with no
+				# line editing, no history and no Ctrl-C, which is most of what
+				# makes a repair shell usable from a touchscreen.  So put the
+				# nodes back before the exec; the new root keeps its own copy.
+				mount -t devtmpfs dev /dev 2>/dev/null
 				exec setsid cttyhack chroot /newroot /bin/sh -i
 				# Reaching this line means the exec failed: say so before the
 				# boot carries on, because a silent fall-through is what made

@@ -316,8 +316,12 @@ public final class MainActivity extends Activity {
                         : specRaw.trim() + " shell=1";
                     applySpec(next);
                     saveSpec(next.trim());
-                    toast(shellFirst ? "boot to shell: on - the init scripts are skipped"
-                                      : "boot to shell: off - normal boot");
+                    /* A VM that is already running was built with the arguments it
+                     * was given, and /init reads the flag once at the hand-off:
+                     * say plainly that this is for the next Boot, not this one. */
+                    toast((shellFirst ? "boot to shell: on - the init scripts are skipped"
+                                      : "boot to shell: off - normal boot")
+                          + (vmThread != null ? " - Boot again to apply" : ""));
                 }
                 else if (id == R.string.clear) console.clear();
                 else if (id == R.string.debug_on || id == R.string.debug_off) {
@@ -355,7 +359,7 @@ public final class MainActivity extends Activity {
      * failure, because the app then looks like it is ignoring its own settings.
      * So the asset carries a revision and re-unpacks when they disagree: 1.6 MB
      * against a silent misboot. */
-    private static final int INITRD_REV = 1;
+    private static final int INITRD_REV = 2;
     /* An initrd picked from storage is the user's file, not ours to refresh. */
     private static final int INITRD_PICKED = -1;
 
@@ -363,6 +367,47 @@ public final class MainActivity extends Activity {
         final int rev = getSharedPreferences("rvm", MODE_PRIVATE).getInt("initrd_rev", 0);
         if (rev == INITRD_PICKED || (rev == INITRD_REV && initrd.exists()))
             return;
+        unpackBuiltinInitrd();
+    }
+
+    /* Whether the initramfs in that file implements `rvm.shell=root`, read out of
+     * the bytes rather than assumed from a name or a revision.  This is the only
+     * way the app can know that a setting it applied is going to be ignored by what
+     * it is about to boot, and an initrd here is 1.6 MB, so a scan is far cheaper
+     * than being wrong.  A file taken from the release may be the gzipped one and
+     * the kernel accepts that, so the scan has to as well.  Anything unreadable or
+     * absurdly large is called capable: no gate rather than a false refusal. */
+    private boolean initrdHasShell(File f) {
+        java.io.InputStream in = null;
+        try {
+            boolean gz = false;
+            java.io.InputStream probe = new java.io.FileInputStream(f);
+            try { gz = probe.read() == 0x1f && probe.read() == 0x8b; }
+            finally { close(probe); }
+            in = new java.io.BufferedInputStream(new java.io.FileInputStream(f), 1 << 16);
+            if (gz) in = new java.util.zip.GZIPInputStream(in);
+            java.io.ByteArrayOutputStream all = new java.io.ByteArrayOutputStream(1 << 20);
+            byte[] buf = new byte[1 << 16];
+            int got;
+            while ((got = in.read(buf)) > 0) {
+                all.write(buf, 0, got);
+                if (all.size() > (64 << 20)) return true; /* not ours to judge */
+            }
+            return all.toString("ISO-8859-1").indexOf("rvm.shell=root") >= 0;
+        } catch (java.io.IOException e) {
+            return true;
+        } finally {
+            close(in);
+        }
+    }
+
+    /* Streams the APK's own initramfs over the working copy.  Split out of
+     * ensureBuiltinInitrd() because a boot may need it even when the user picked
+     * the file themselves: a pick from an older release is stale in a way that
+     * shows up only as a feature that silently does nothing, and the picked file is
+     * a copy inside our own directory, so replacing it costs a re-pick and no more.
+     * Returns whether the file is in place afterwards. */
+    private boolean unpackBuiltinInitrd() {
         final File tmp = new File(initrd.getParentFile(), initrd.getName() + ".new");
         boolean ok = false;
         java.io.InputStream in = null;
@@ -384,9 +429,13 @@ public final class MainActivity extends Activity {
             close(in); close(out);
             if (!ok) tmp.delete(); /* and the previous copy is still in place */
         }
-        if (ok)
+        if (ok) {
+            /* Claiming the file is what stops the next boot from re-unpacking it,
+             * and stops ensureBuiltinInitrd() treating it as the user's again. */
             getSharedPreferences("rvm", MODE_PRIVATE).edit()
                 .putInt("initrd_rev", INITRD_REV).apply();
+        }
+        return ok;
     }
 
     private void startVm() {
@@ -401,18 +450,6 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        console.clear();
-        banner("Ready.\n  kernel: " + human(kernel.length())
-               + "\n  disk:   " + (disk.exists() ? human(disk.length()) : "none")
-               + "\n  ram:    " + ramMib + " MiB\n  cpu:    " + harts
-               + (shellFirst ? "\n  shell:  root - the disk's init scripts are skipped\n"
-                              : "\n"));
-        sawOutput = false;
-        status.setText(debug ? "starting, debug log on…" : "starting…");
-        bootAt = System.currentTimeMillis();
-        startKeepAwake();
-        ui.removeCallbacks(beat);
-        ui.postDelayed(beat, 10000);
         final String k = kernel.getAbsolutePath();
         final String d = disk.exists() ? disk.getAbsolutePath() : null;
         final String i = initrd.exists() ? initrd.getAbsolutePath() : null;
@@ -431,6 +468,45 @@ public final class MainActivity extends Activity {
             + "root=/dev/vda rootwait rw nosoftlockup rvm.time=virtual"
             + (shellFirst ? " rvm.shell=root" : "");
 
+        /* Read the initramfs before trusting it.  `shell=1` is a request made of
+         * /init inside that image, and an image from an older release has no branch
+         * for rvm.shell=root: the argument arrives, nothing is done with it, and
+         * the app still reports its own setting as applied.  So when shell mode was
+         * asked for and the image cannot provide it, the APK's copy goes in place
+         * for this boot, and the banner says which of the two happened. */
+        boolean hasShell = initrd.exists() && initrdHasShell(initrd);
+        String idnote = "";
+        if (shellFirst && initrd.exists() && !hasShell) {
+            unpackBuiltinInitrd();
+            hasShell = initrdHasShell(initrd);
+            idnote = hasShell
+                ? "\n  initrd: your copy predates Boot to shell (no rvm.shell=root in it),\n"
+                  + "          so the initramfs inside this APK was used for this boot\n"
+                : "\n  initrd: WARNING - neither your copy nor the APK's asset implements\n"
+                  + "          rvm.shell=root, so Boot to shell will be ignored this boot\n";
+        }
+
+        console.clear();
+        /* These lines exist because this bug could not be read off a screenshot.
+         * Quoting the boot arguments turns "the app never sent the flag" and "the
+         * initramfs cannot act on the flag" into two different answers, and the
+         * initrd line says which file the guest is really about to run. */
+        banner("Ready.\n  kernel: " + human(kernel.length())
+               + "\n  disk:   " + (disk.exists() ? human(disk.length()) : "none")
+               + "\n  initrd: " + (initrd.exists()
+                       ? human(initrd.length())
+                         + (hasShell ? ", Boot to shell supported" : ", NO Boot to shell support")
+                       : "none")
+               + "\n  ram:    " + ramMib + " MiB\n  cpu:    " + harts
+               + (shellFirst ? "\n  shell:  root - the disk's init scripts are skipped\n" : "\n")
+               + idnote
+               + "  boot args: " + bootargs + "\n");
+        sawOutput = false;
+        status.setText(debug ? "starting, debug log on…" : "starting…");
+        bootAt = System.currentTimeMillis();
+        startKeepAwake();
+        ui.removeCallbacks(beat);
+        ui.postDelayed(beat, 10000);
         vmThread = new Thread(new Runnable() {
             @Override public void run() {
                 long h = RvmNative.vmCreate(k, d, i, ramMib, bootargs, debug);

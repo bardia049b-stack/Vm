@@ -121,6 +121,13 @@ The app holds a `PARTIAL_WAKE_LOCK` while a VM is running: without one Android
 stops scheduling the vCPU thread when the screen times out, and a boot that needs
 tens of minutes of CPU on a phone simply halts mid-init, silently.
 
+`Boot to shell` is a branch in `/init` inside the initramfs rather than something
+the emulator implements, so an initrd copied out of an older release accepts the
+flag and ignores it.  The app now reads the image it is about to boot, puts its own
+copy in place when that image predates the feature, and prints the boot arguments
+and the initrd's capability in the banner - which is what tells the two ways the
+setting can do nothing apart from a single screenshot.
+
 Adding `shell=1` to that line skips the disk's init scripts and hands the console
 to its `/bin/sh` instead (the initramfs' `rvm.shell=root`), which is the difference
 between a prompt in ten seconds and a silent minute or two on a phone: enough to

@@ -6,6 +6,34 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+0.3.15.  `shell=1` reached the guest and changed nothing, and nothing said why.
+
+Boot to shell is not implemented by the app: it is a branch in /init inside the
+initramfs.  The initrd that shipped before that branch has no `root` case at all
+(`grep -c` on the two shipped assets: 0 occurrences of rvm.shell=root against 5),
+so a phone holding a picked copy of the older file accepts the flag, passes it, and
+boots straight into /sbin/init - up to the same silent runlevel S the wake lock was
+blamed for.  Same kernel, same disk, same boot arguments, only the initrd changed,
+and the boot stops at the user's exact line while the new image prints
+"/sbin/init skipped" and gives a prompt.  That is the whole of it: the flag was
+never the problem, an old file that cannot read it was.
+
+So the app now opens the initramfs it is about to boot and looks for the feature
+before depending on it; if the image predates it and the feature was asked for, the
+APK's own copy is put in place for that boot and the banner says so.  The banner
+carries the initrd's size and capability and quotes the boot arguments, because
+"the app never sent the flag" and "the initramfs cannot act on it" looked identical
+and were not.  A pick from storage is now refreshed for a boot that needs it:
+`initrd_rev` is only about not re-unpacking, it was never a licence to boot a file
+the app knows is too old.  Toggling while a VM runs says to boot again.
+
+0.3.15 also rebuilds that initramfs (its revision goes to 2).  The hand-off moves
+`/dev` into the new root, and `cttyhack` then looks up the console by name and finds
+nothing, so the Boot to shell prompt printed "can't access tty; job control turned
+off" and gave a shell with no line editing, no history and no Ctrl-C - usable to a
+script on a serial line, miserable to a thumb.  `/dev` is remounted in the initramfs
+before the exec, and the tty arrives.
+
 0.3.14.  The reason a phone boot never finished, and the reason it looked like a
 hang rather than a wait.
 
