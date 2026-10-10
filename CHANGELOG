@@ -6,6 +6,73 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+The terminal answers the cursor-position query now. ash asks where the
+cursor is (ESC[6n) before drawing its first prompt and blocks until
+someone replies; nobody did, so the shell sat dead until the first
+keystroke, which it then ate as the answer -- every character typed
+before that landed in the wrong place. The emulator tracks the column it
+has printed and replies the way a real terminal does, holds incoming
+keystrokes aside while the reply is in flight, and flushes output that
+ends without a newline -- a prompt is exactly that -- on the poll tick
+instead of hoarding it until the next write. Typing echoes within a
+tenth of a second again.
+
+Two instruction-level bugs turned out to sit behind "the network does
+not work". The FP dispatcher filed the compare group under the wrong
+funct7, so every feq/flt/fle -- flt.d among them, which is all busybox
+ping needs for its timing maths -- trapped as an illegal instruction and
+killed the process with SIGILL. The unit-test harness had the same wrong
+encoding baked into its macros, which is why the tests agreed with the
+emulator instead of the architecture; both now use the real one, and the
+suite covers all six compares. Separately, the medeleg default left the
+illegal-instruction bit unset through a shifted-constant typo, so any
+fault the decoder refused escalated to M-mode, where nothing handles it,
+and the machine spun forever at the kernel entry in a fault loop; the
+delegation is fixed, and an undelegated exception now stops the VM
+loudly instead of spinning.
+
+virtio-mmio rejected every access that was not exactly four bytes wide.
+Linux reads config space one byte at a time (vm_get), so the first MAC
+read faulted the guest kernel the moment virtio_net probed. The
+transport now serves 1/2/4/8-byte windows over both registers and config
+space, which is what the spec has always allowed drivers to assume.
+
+The userspace NAT computed its IP and UDP/TCP checksums with u16 loads,
+which on a little-endian host produces a byte-swapped checksum: the
+guest silently dropped every packet the emulator sent, ARP excepted
+because ARP has no checksum. Checksums now sum big-endian bytes. Its TCP
+proxy also connected and received on blocking sockets, freezing the
+whole VM for the duration of a handshake; the sockets are non-blocking,
+unacknowledged data is left for the guest to retransmit, and poll drains
+them from the run loop. With all of that in place the smoke test boots a
+Debian kernel, insmods the virtio modules, gets a lease over DHCP, pings
+the gateway through the NAT and fetches a page from deb.debian.org.
+
+The CI kernel config grows CONFIG_VIRTIO_NET=y so the published Image
+needs no modules for eth0, and the shipped initramfs gives udhcpc the
+lease script it has always needed -- without one it obtains an address
+and never applies it.
+
+The console went black. RvmView paints white glyphs and a white block
+cursor on pure black, the header, the button row and the key bar follow,
+and the whole app reads like the terminal it is. Termux got the palette
+right years ago; there is no reason to argue with it.
+
+init=/bin/sh left the kernel command line. It was a crutch from before
+the rootfs had an init, and it cost the guest its tty: no getty, no
+login, no echo while typing, no job control, just a shell bolted onto
+the console. With sysvinit and a ttyS0 getty in the rootfs the boot ends
+at a login prompt, and the initramfs /init gets the same tty behaviour
+from setsid cttyhack. The rootfs also grows an /etc/network/interfaces
+with eth0 on dhcp, so the userspace NAT configures itself at boot.
+
+The busybox initramfs is back, and this time it ships inside the APK as
+an asset with an Initrd button to replace it: a kernel alone boots to a
+shell with a working tty and a configured eth0. tools/mkinitrd.sh builds
+it, and tools/smoke.sh proves the whole thing the way a user would --
+boot under a pty, type at the shell one character at a time, require the
+guest to echo while typing, then ping and fetch a page through the NAT.
+
 The kernel loader handles the format Debian actually ships. Debian's riscv64
 /boot/vmlinux-* is not an ELF: the EFI stub wraps the boot Image as a PE32+
 executable, so the file starts with MZ and carries COFF sections. loader_sniff

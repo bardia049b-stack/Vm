@@ -186,6 +186,16 @@ cat > "$ROOTDIR/etc/hosts" <<'HOSTS'
 10.0.2.15   rvm           # what the built-in DHCP hands out; see PLAN step 9
 HOSTS
 
+cat > "$ROOTDIR/etc/network/interfaces" <<'IFACES'
+# /etc/network/interfaces -- virtio-net is the only NIC; the built-in
+# userspace NAT hands out 10.0.2.15 with DHCP, like QEMU's user mode.
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+IFACES
+
 log "setting the root password"
 chroot "$ROOTDIR" /bin/sh -c "echo 'root:$PASSWORD' | chpasswd"
 
