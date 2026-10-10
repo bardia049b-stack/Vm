@@ -45,6 +45,29 @@ jobs:
           key: ccache-linux-${{ matrix.cc }}-${{ hashFiles('src/**', 'tests/**', 'Makefile') }}
           restore-keys: ccache-linux-${{ matrix.cc }}-
 
+      - name: The workflow files parse
+        run: |
+          set -e
+          # Nothing else in the gate reads .github/workflows.  A block scalar whose
+          # continuation lines slipped to column 0 made release.yml unloadable, and
+          # the only sign was a red run named after the file path with no jobs and
+          # no log at all -- which is a terrible way to find out on a tag push.
+          python3 -c "import yaml" 2>/dev/null || python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+          files = sorted(glob.glob(".github/workflows/*.yml"))
+          bad = 0
+          for f in files:
+              try:
+                  doc = yaml.safe_load(open(f))
+                  assert doc.get("jobs"), "no jobs"
+              except Exception as e:
+                  bad += 1
+                  print("::error file=%s::%s" % (f, str(e).replace("\n", " ")))
+          print("workflows parse: %d files, %d broken" % (len(files), bad))
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Build
         run: |
           mkdir -p "$CCACHE_DIR"
