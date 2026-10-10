@@ -122,7 +122,7 @@ jobs:
             | file | what it is |
             | --- | --- |
             | `Image` | riscv64 Linux 6.12 with virtio-mmio, virtio-blk, virtio-net and ext4 built in |
-            | `initrd.img` | busybox initramfs: brings up eth0, then switches root to `/dev/vda` |
+            | `initrd.img` | busybox initramfs: brings up eth0, then hands the console to `/dev/vda` |
             | `disk.img.gz` | Debian 13 minbase with getty, apt, curl and DHCP on eth0. Unzip it first |
 
             In the app: menu (three dots) -> **Kernel**, **Disk**, **Initrd**, pick the three

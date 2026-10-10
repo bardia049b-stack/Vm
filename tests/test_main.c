@@ -96,6 +96,7 @@ int main(int argc, char **argv) {
     RUN(test_plic_claim);
     RUN(test_virtio_transport);
     RUN(test_virtio_blk_roundtrip);
+    RUN(test_virtio_blk_long_chain);
 
     printf("[loader]\n");
     RUN(test_loader_elf);

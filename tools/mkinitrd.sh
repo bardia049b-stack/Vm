@@ -96,7 +96,11 @@ mount -t sysfs sys /sys
 mount -t devtmpfs dev /dev 2>/dev/null
 # Without a lease script udhcpc never applies the address it obtains.
 ifconfig eth0 up 2>/dev/null
-udhcpc -i eth0 -n -q -s /usr/share/udhcpc/default.script >/dev/null 2>&1
+# Say so when there is no lease: a silent failure here is what made a dead
+# network look like a working one for so long.
+if ! udhcpc -i eth0 -n -q -s /usr/share/udhcpc/default.script; then
+	echo "=== rvm initramfs: no DHCP lease from 10.0.2.3, network is down ==="
+fi
 
 # The initramfs is a debug shell *and* the hand-off into a real rootfs.  A disk
 # with /sbin/init takes over as soon as it mounts, so kernel + disk lands in
@@ -110,6 +114,15 @@ if ! grep -qs 'rvm.shell=1' /proc/cmdline; then
 			mount --move /dev /newroot/dev 2>/dev/null || mount -t devtmpfs dev /newroot/dev 2>/dev/null
 			mount --move /proc /newroot/proc 2>/dev/null || mount -t proc proc /newroot/proc 2>/dev/null
 			mount --move /sys /newroot/sys 2>/dev/null || mount -t sysfs sys /newroot/sys 2>/dev/null
+			# The lease lives in kernel state, so it walks into the new root
+			# with us; /etc/resolv.conf does not, because udhcpc wrote it into
+			# the initramfs.  Seed the disk's copy so name resolution works
+			# from the first second even on an image whose init scripts are not
+			# wired up -- which is what every disk built before the
+			# update-rc.d fix in rootfs.yml is.
+			RES=$(readlink -f /newroot/etc/resolv.conf 2>/dev/null || echo /newroot/etc/resolv.conf)
+			mkdir -p "$(dirname $RES)" 2>/dev/null
+			printf 'nameserver 10.0.2.3\noptions timeout:1 attempts:2\n' > $RES 2>/dev/null
 			# chroot rather than switch_root: busybox switch_root wants the
 			# initramfs to look a particular way and prints its usage when it
 			# does not, which leaves a phone in a shell with no reason given.

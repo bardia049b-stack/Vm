@@ -171,7 +171,11 @@ INITTAB
 
 cat > "$ROOTDIR/etc/fstab" <<'FSTAB'
 # /etc/fstab -- the only real block device RVM presents is virtio-blk.
-/dev/vda        /               ext4    errors=remount-ro   0   1
+# No fsck at boot, and that is deliberate (passno 0).  The guest is killed, not
+# unmounted -- a phone stops the app mid-write -- so passno 1 makes e2fsck walk
+# the whole 2 GiB image on every single boot, and at emulator speed a silent
+# e2fsck is indistinguishable from a hang in runlevel S.
+/dev/vda        /               ext4    defaults,nofail     0   0
 proc            /proc           proc    defaults            0   0
 sysfs           /sys            sysfs   defaults            0   0
 devpts          /dev/pts        devpts  gid=5,mode=620      0   0
@@ -224,7 +228,11 @@ log "creating $OUT ($SIZE, ext4)"
 rm -f "$OUT"
 # mke2fs -d populates the filesystem from a directory tree without needing a
 # loop device or mkfs on a real block device -- ideal in a container.
-mke2fs -t ext4 -d "$ROOTDIR" -F -L rvmroot -O '^has_journal' "$OUT" "$SIZE"
+# The journal stays on, unlike the first version of this tool: ext4 without one
+# is not meant to survive being unmounted by SIGKILL, which is exactly what a
+# phone does to this process.  -M -1 -i 0 switches off the mount-count and
+# age triggers for a forced check, so nothing fscks this image behind our back.
+mke2fs -t ext4 -d "$ROOTDIR" -F -L rvmroot -M -1 -i 0 "$OUT" "$SIZE"
 
 umount_chroot
 CLEANUP=""

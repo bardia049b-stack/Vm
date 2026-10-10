@@ -88,6 +88,18 @@ static void blk_notify(virtio *v, u32 qidx) {
             if (ch.iov[i].write && ch.iov[i].len >= 1)
                 status_i = (s32)i;
         }
+        if (ch.truncated) {
+            /* Cannot happen while VQ_MAX_IOV is the queue size, and if it ever
+             * does we must say so in the status byte rather than complete a
+             * request with a tail we never looked at. */
+            LOG_WARN("virtio-blk: %u-descriptor chain does not fit, refusing", ch.n);
+            u8 st = VIRTIO_BLK_S_IOERR;
+            if (ch.n)
+                vq_write(v, &ch.iov[ch.n - 1], &st, 1);
+            vq_done(v, qidx, &ch, ch.n ? 1 : 0);
+            b->n_err++;
+            continue;
+        }
         if (hdr_i < 0 || status_i < 0) {
             u8 st = VIRTIO_BLK_S_IOERR;
             vq_write(v, &ch.iov[ch.n - 1], &st, 1);

@@ -9,9 +9,9 @@ tested. A step that leaves the tree red is not finished.
 	step 4	MMU: Sv39, Sv48, Sv57		done
 	step 5	CLINT				done
 	step 6	PLIC				done
-	step 7	virtio-blk			done
-	step 8	boot Debian			hand-off verified, debootstrap not
-	step 9	virtio-net			userspace NAT done, TAP not verified
+	step 7	virtio-blk			done; chains were truncated at 16 descs, fixed
+	step 8	boot Debian			verified: /init hands off to sysvinit on the disk
+	step 9	virtio-net			verified in-guest: DNS + TCP through the NAT
 	step 10	virtio-gpu, virtio-input	not started
 	step 11	virtio-snd			not started
 	step 12	hot block JIT			not started

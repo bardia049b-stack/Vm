@@ -6,6 +6,31 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+virtio: a descriptor chain is now walked to its end.  The iovec table held 16
+entries and vq_pop simply stopped collecting when it was full, so any request
+bigger than about 56 KB was truncated, the status byte was left unwritten and
+the guest waited forever on a request the device considered finished.  Nothing
+logged, nothing errored: a Debian boot froze in runlevel S on its first readahead
+of 16 pages, and not even SIGTERM reached the process.  Linux puts up to 128
+scatter entries in a request unless the device advertises VIRTIO_BLK_F_SEG_MAX,
+so the cap is now the queue size, a chain that still overflows it is refused with
+S_IOERR instead of guessed at, and test_virtio_blk_long_chain builds 42
+descriptors and checks all 40 buffers.
+
+A disk image no longer invites a full fsck on every boot.  /etc/fstab had
+passno 1, and a guest that is SIGKILLed by the OS -- which is how a phone stops
+this app -- is never cleanly unmounted, so sysvinit checked 2 GiB in silence
+before it would show a login prompt.  Both builders now write passno 0,
+tools/mkrootfs.sh stops mke2fs setting a mount count or an age, and it stopped
+creating the filesystem without a journal: ext4 with no journal is not meant to
+survive being unmounted by a signal.
+
+/init seeds the disk's /etc/resolv.conf before handing the console over, because
+the lease survives the chroot in kernel state but the resolver config does not,
+and it says out loud when DHCP gives it no address.  rootfs.yml enables
+networking in rcS.d by hand: Debian's ifupdown postinst does not create a SysV
+link, so the shipped image had no eth0 at boot.
+
 Input is no longer parked behind the cursor reply, because parking it was the
 half of the fix above that did not work. A new query reset the side buffer, so
 every keystroke typed while a prompt was being drawn was thrown away, and a

@@ -41,12 +41,19 @@ jobs:
           sudo cp /etc/resolv.conf /srv/rootfs/etc/resolv.conf
           sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -c "
             apt-get update
+            # e2fsprogs because minbase ships no fsck.ext4 at all: with a
+            # passno that says "check me", checkroot tried to run a program that
+            # is not in the image, gave up and dropped the console into
+            # maintenance mode with no way to fix the filesystem from there.
             apt-get install -y --no-install-recommends \
-              sysvinit-core ifupdown isc-dhcp-client iproute2 iputils-ping curl wget ca-certificates
+              sysvinit-core ifupdown isc-dhcp-client iproute2 iputils-ping \
+              curl wget ca-certificates e2fsprogs
             echo 'root:root' | chpasswd
             echo 'T0:23:respawn:/sbin/getty -L ttyS0 115200 vt100' >> /etc/inittab
             echo 'rvm' > /etc/hostname
-            echo '/dev/vda / ext4 defaults 0 1' > /etc/fstab
+            # passno 0, not 1: see tools/mkrootfs.sh.  An image that is
+            # unmounted by a kill must not invite a full-check-on-boot.
+            echo '/dev/vda / ext4 defaults,nofail 0 0' > /etc/fstab
             echo 'proc /proc proc defaults 0 0' >> /etc/fstab
             echo 'sysfs /sys sysfs defaults 0 0' >> /etc/fstab
           "
@@ -82,8 +89,22 @@ jobs:
             # in rcS.d and there is no rc2.d one to look for.
             ls /etc/rcS.d/S*networking > /dev/null
             command -v dhclient ip apt >/dev/null
+            # debootstrap leaves /usr/sbin/policy-rc.d in the target while it
+            # installs, and while that file exists every postinst skips
+            # update-rc.d -- so the image ships with no boot links at all and
+            # eth0 never comes up.  Remove it and wire the one script the guest
+            # cannot do without, with ifupdown's own "start 20 S" so the link
+            # lands in rcS.d where SysV looks for it.
             grep -q "^auto eth0" /etc/network/interfaces
           '
+
+      - name: enable networking at boot
+        run: |
+          set -e
+          sudo rm -f /srv/rootfs/usr/sbin/policy-rc.d
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/sh -c \
+            'update-rc.d networking start 20 S . stop 20 0 1 6 .'
+          sudo ls /srv/rootfs/etc/rcS.d | grep networking
 
       - name: build disk.img
         run: |

@@ -315,3 +315,120 @@ void test_virtio_blk_roundtrip(void) {
     unlink(path);
     bus_free(&b);
 }
+
+/* A chain longer than the iovec table used to be truncated in silence: the
+ * device copied the first VQ_MAX_IOV entries, reported the request done and
+ * never wrote the status byte, so the guest sat in an uninterruptible wait --
+ * no error, no timeout, no console output.  That is what froze a Debian boot in
+ * runlevel S on its first 64 KB readahead (16 pages + header + status = 18
+ * descriptors).  Forty buffers is comfortably past the old cap of 16. */
+void test_virtio_blk_long_chain(void) {
+    enum { NBUF = 40, BUFSZ = 512 };
+    bus b;
+    CHECK(bus_init(&b, 16ULL << 20) == RVM_OK);
+    plic p;
+    CHECK(plic_init(&p) == RVM_OK);
+
+    const char *path = "/tmp/rvm-test-virtio-longchain.img";
+    unlink(path);
+    virtio_blk blk;
+    CHECK(virtio_blk_open(&blk, path, 1ULL << 20, true) == RVM_OK);
+    virtio dev;
+    CHECK(virtio_init(&dev, &b, virtio_blk_backend(&blk), 1) == RVM_OK);
+    virtio_set_irq(&dev, test_raise, &p);
+
+    virtio_store(&dev, REG_STATUS, 4, VIRTIO_STATUS_ACK);
+    virtio_store(&dev, REG_STATUS, 4, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
+    virtio_store(&dev, REG_DRIVER_FEATURES_SEL, 4, 1);
+    virtio_store(&dev, REG_DRIVER_FEATURES, 4, 1u << (VIRTIO_F_VERSION_1 - 32));
+    virtio_store(&dev, REG_STATUS, 4,
+                 VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK |
+                     VIRTIO_STATUS_DRIVER_OK);
+
+    const u64 DESC = RVM_RAM_BASE + 0x200000ULL;
+    const u64 AVAIL = RVM_RAM_BASE + 0x201000ULL;
+    const u64 USED = RVM_RAM_BASE + 0x202000ULL;
+    const u64 HDR = RVM_RAM_BASE + 0x203000ULL;
+    const u64 DATA = RVM_RAM_BASE + 0x204000ULL;
+    const u64 STATUS = RVM_RAM_BASE + 0x20a000ULL;
+
+    virtio_store(&dev, REG_QUEUE_SEL, 4, 0);
+    virtio_store(&dev, REG_QUEUE_NUM, 4, 64);
+    virtio_store(&dev, REG_QUEUE_DESC_LO, 4, (u32)DESC);
+    virtio_store(&dev, REG_QUEUE_DESC_HI, 4, (u32)(DESC >> 32));
+    virtio_store(&dev, REG_QUEUE_DRIVER_LO, 4, (u32)AVAIL);
+    virtio_store(&dev, REG_QUEUE_DRIVER_HI, 4, (u32)(AVAIL >> 32));
+    virtio_store(&dev, REG_QUEUE_DEVICE_LO, 4, (u32)USED);
+    virtio_store(&dev, REG_QUEUE_DEVICE_HI, 4, (u32)(USED >> 32));
+    virtio_store(&dev, REG_QUEUE_READY, 4, 1);
+    CHECK(dev.driver_ok);
+
+    /* The backing file holds a pattern across the whole read. */
+    static u8 disk[NBUF * BUFSZ];
+    for (u32 i = 0; i < sizeof(disk); i++)
+        disk[i] = (u8)(i * 31 + 5);
+    int fd = open(path, O_RDWR);
+    CHECK(fd >= 0);
+    CHECK_U64((u64)pwrite(fd, disk, sizeof(disk), 0), sizeof(disk));
+
+    u8 hdr[16];
+    memset(hdr, 0, sizeof(hdr));
+    u32 type = VIRTIO_BLK_T_IN;
+    u64 sector = 0;
+    memcpy(hdr + 0, &type, 4);
+    memcpy(hdr + 8, &sector, 8);
+    bus_write_bytes(&b, HDR, hdr, sizeof(hdr));
+
+    u8 zero[BUFSZ];
+    memset(zero, 0, sizeof(zero));
+    for (u32 i = 0; i < NBUF; i++)
+        bus_write_bytes(&b, DATA + (u64)i * BUFSZ, zero, sizeof(zero));
+    bus_store(&b, STATUS, 1, 0xEE);
+
+    /* desc 0 = request header, 1..NBUF = device-writable data, last = status */
+    for (u32 i = 0; i <= NBUF + 1; i++) {
+        u64 addr;
+        u32 len;
+        u16 flags = VRING_NEXT, next = (u16)(i + 1);
+        if (i == 0) {
+            addr = HDR;
+            len = sizeof(hdr);
+        } else if (i <= NBUF) {
+            addr = DATA + (u64)(i - 1) * BUFSZ;
+            len = BUFSZ;
+            flags = (u16)(VRING_NEXT | VRING_WRITE);
+        } else {
+            addr = STATUS;
+            len = 1;
+            flags = VRING_WRITE;
+            next = 0;
+        }
+        put_desc(&b, DESC, i, addr, len, flags, next);
+    }
+    bus_store(&b, AVAIL + 0, 2, 0);
+    bus_store(&b, AVAIL + 2, 2, 1);
+    bus_store(&b, AVAIL + 4, 2, 0);
+
+    virtio_store(&dev, REG_QUEUE_NOTIFY, 4, 0);
+
+    u64 used_idx = 0, elem_len = 0, status_byte = 0xEE;
+    bus_load(&b, USED + 2, 2, &used_idx);
+    bus_load(&b, USED + 4 + 4, 4, &elem_len);
+    bus_load(&b, STATUS, 1, &status_byte);
+    CHECK_U64(used_idx, 1);
+    CHECK_U64(status_byte, VIRTIO_BLK_S_OK); /* <- never written before the fix */
+    CHECK_U64(elem_len, 1 + NBUF * BUFSZ);
+    CHECK_U64(blk.n_read, 1);
+    CHECK_U64(blk.n_err, 0);
+
+    for (u32 i = 0; i < NBUF; i++) {
+        u8 got[BUFSZ];
+        bus_read_bytes(&b, DATA + (u64)i * BUFSZ, got, sizeof(got));
+        CHECK_MEM(got, disk + (u64)i * BUFSZ, sizeof(got));
+    }
+
+    close(fd);
+    virtio_blk_close(&blk);
+    unlink(path);
+    bus_free(&b);
+}

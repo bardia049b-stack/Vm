@@ -20,7 +20,14 @@
 
 #define VIRTIO_MAX_QUEUES 4
 #define VIRTQUEUE_NUM_MAX 256
-#define VQ_MAX_IOV        16
+/* A descriptor chain can be as long as the queue itself.  Linux defaults to
+ * 128 scatter entries per request, so a 64 KB read arrives as header + 16
+ * pages + status and a 512 KB one as 130 descriptors.  The cap used to be 16
+ * and vq_pop simply *stopped collecting*, which truncated the transfer and
+ * left the status byte unwritten -- the guest then waited forever on a request
+ * that was already finished as far as the device was concerned.  No error, no
+ * timeout, no output: that is the hang this file's comment is about. */
+#define VQ_MAX_IOV        256
 
 /* virtqueue descriptor flags */
 #define VRING_DESC_F_NEXT     1
@@ -78,6 +85,8 @@ typedef struct vq_chain {
     u32 n;
     u16 head;
     u32 total_len;
+    bool truncated;  /* chain longer than iov[]: never with the cap above, and
+                      * a backend must refuse the request rather than guess */
 } vq_chain;
 
 struct virtio;

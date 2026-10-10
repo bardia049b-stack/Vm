@@ -293,8 +293,12 @@ bool vq_pop(virtio *v, u32 qidx, vq_chain *out) {
     memset(out, 0, sizeof(*out));
     out->head = head;
 
+    /* Walk the whole chain even when the iovec table is full: stopping early
+     * was the bug.  The walk is bounded by the queue size, which is also what
+     * makes a cyclic chain from a broken or hostile guest terminate. */
     u16 idx = head;
-    for (u32 guard = 0; guard < VQ_MAX_IOV; guard++) {
+    u32 links = q->num ? q->num : VQ_MAX_IOV;
+    for (u32 guard = 0; guard < links; guard++) {
         vring_desc d;
         if (!bus_read_bytes(v->bus, q->desc_addr + (u64)idx * sizeof(vring_desc), &d, sizeof(d)))
             return false;
@@ -304,6 +308,8 @@ bool vq_pop(virtio *v, u32 qidx, vq_chain *out) {
             e->len = d.len;
             e->write = (d.flags & VRING_DESC_F_WRITE) != 0;
             out->total_len += d.len;
+        } else {
+            out->truncated = true;
         }
         if (!(d.flags & VRING_DESC_F_NEXT))
             break;
