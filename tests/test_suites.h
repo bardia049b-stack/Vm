@@ -35,6 +35,7 @@ void test_mmu_identity_exec(void);
 void test_uart_hello(void);
 void test_uart_fifo_irq(void);
 void test_clint_mtimecmp(void);
+void test_clint_virtual_time(void);
 void test_plic_claim(void);
 void test_virtio_transport(void);
 void test_virtio_blk_roundtrip(void);

@@ -106,3 +106,14 @@ hands the console over to it, so you land in the distro. Put `rvm.shell=1` on
 The APK ships that same initramfs as an asset, so on a phone Kernel and Disk is
 all there is to pick.
 
+Two more bootargs matter on a phone, and the app passes both.  `rvm.time=virtual`
+makes `mtime` follow retired instructions instead of host wall clock (see
+src/devices/clint.c), so a boot that is slow because the host is slow is not also
+a guest that thinks its CPU is stuck.  `nosoftlockup` silences the kernel watchdog,
+which on a device with a foreground app and a two gigabyte copy in progress
+reports true things in the wrong order.
+
+The app also has a machine line: menu -> Machine edits `ram=1536 cpu=1`, clamped
+to 256-4096 MiB and remembered between runs, and the value reaches `vmCreate`.
+After Boot the console prints the sizes the VM really got.
+

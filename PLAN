@@ -250,6 +250,19 @@ guest that refuses frames and loses segments.
 tools/run.sh --net does all of it. Acceptance is that apt update, curl, wget,
 ssh out and ping work inside the guest.
 
+Status as of 0.3.11: ping, DNS, curl (138 612 B and 12 910 137 B twice) and
+apt's install/dpkg paths work in the shipped image.  `apt-get update` does not:
+it aborts with `std::bad_alloc` inside apt a few seconds in, before the first
+`Get:` line, i.e. before it asks the relay for anything, so the *network* half of
+this acceptance is met and what remains is apt's own arithmetic (the `-1` that a
+phone saw printed as `Reading package lists... 4294967295%`).  Every host-side
+explanation was tested and cleared in the same boot - RAM size, swap,
+`CommitLimit`, `overcommit_memory`, `ulimit -v`, the stale 45 MB `pkgcache.bin`
+and 90 MB of baked-in indexes, `Acquire::Languages=none`, the three
+`APT::Cache-*` sizes, `/etc/apt/apt.conf.d`, and `lists` on tmpfs; details in
+CHANGELOG.  Next step is an strace of apt, which needs `strace` in the image - a
+debug-only run of rootfs.yml, not a change the phone has to download.
+
 
 Step 10: graphics
 -----------------

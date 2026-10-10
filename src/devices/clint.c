@@ -18,6 +18,30 @@ u64 clint_mtime(const clint *c) {
     return c->mtime;
 }
 
+void clint_set_virtual_time(clint *c, bool on, u64 base) {
+    if (!c)
+        return;
+    c->virtual_time = on;
+    c->insns0 = base;
+    c->mtime0 = c->mtime;
+    if (on)
+        c->free_running = false; /* the counter is ours to advance now */
+}
+
+/* Fold retired instructions into mtime.  Kept separate from clint_tick so the
+ * device does not have to know about the cpu: the run loop hands over the count
+ * it already has. */
+void clint_advance(clint *c, u64 insns_now) {
+    if (!c || !c->virtual_time || insns_now <= c->insns0)
+        return;
+    /* Derived from the whole count since the base, never added a batch at a
+     * time: that would throw away the sub-tick remainder every round and the
+     * guest clock would run slow by however much each batch fell short. */
+    u64 m = c->mtime0 + ((insns_now - c->insns0) * CLINT_TIMEBASE_HZ) / CLINT_VIRTUAL_MIPS;
+    if (m > c->mtime)
+        c->mtime = m; /* monotonic: the counter may not go back, only stall */
+}
+
 u64 clint_tick(clint *c) {
     if (c->free_running) {
         u64 elapsed = rvm_now_ns() - c->base_ns;

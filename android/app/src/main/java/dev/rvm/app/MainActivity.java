@@ -11,18 +11,29 @@
 package dev.rvm.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.StatFs;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.io.BufferedInputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -44,6 +55,14 @@ public final class MainActivity extends Activity {
     private volatile long vm;
     private volatile Thread vmThread;
     private volatile boolean sawOutput;
+    /* True while a picked file is still being streamed into our own directory.
+     * Boot waits for it: starting a VM on a half written image is a hang that
+     * looks like an emulator bug. */
+    private volatile boolean copying;
+    /* The machine, from the `ram=1536 cpu=1` line in menu -> Machine. */
+    private int ramMib = 1536;
+    private int harts = 1;
+    private String specRaw = "ram=1536 cpu=1";
     private boolean debug;
     private File kernel, disk, initrd;
 
@@ -63,6 +82,7 @@ public final class MainActivity extends Activity {
         ensureBuiltinInitrd();
 
         debug = getSharedPreferences("rvm", MODE_PRIVATE).getBoolean("debug", false);
+        applySpec(loadSpec());
         applyLogSink();
         applyInsets();
 
@@ -267,6 +287,7 @@ public final class MainActivity extends Activity {
         menu.getMenu().add(0, R.string.kernel, order++, R.string.kernel);
         menu.getMenu().add(0, R.string.disk, order++, R.string.disk);
         menu.getMenu().add(0, R.string.initrd, order++, R.string.initrd);
+        menu.getMenu().add(0, R.string.machine, order++, R.string.machine);
         menu.getMenu().add(0, R.string.clear, order++, R.string.clear);
         menu.getMenu().add(0, dbg, order++, dbg);
         menu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
@@ -277,6 +298,7 @@ public final class MainActivity extends Activity {
                 } else if (id == R.string.kernel) pick(PICK_KERNEL);
                 else if (id == R.string.disk) pick(PICK_DISK);
                 else if (id == R.string.initrd) pick(PICK_INITRD);
+                else if (id == R.string.machine) askMachine();
                 else if (id == R.string.clear) console.clear();
                 else if (id == R.string.debug_on || id == R.string.debug_off) {
                     debug = !debug;
@@ -325,9 +347,20 @@ public final class MainActivity extends Activity {
 
     private void startVm() {
         if (vmThread != null) { toast("already running"); return; }
+        if (copying) {
+            toast("a file is still being copied - the bar at the top shows how many bytes");
+            return;
+        }
         if (!kernel.exists()) { toast("pick a kernel first"); return; }
+        if (disk.exists() && disk.length() < (1L << 20)) {
+            toast("disk.img is " + human(disk.length()) + ", far too small - copy it again");
+            return;
+        }
 
         console.clear();
+        banner("Ready.\n  kernel: " + human(kernel.length())
+               + "\n  disk:   " + (disk.exists() ? human(disk.length()) : "none")
+               + "\n  ram:    " + ramMib + " MiB\n  cpu:    " + harts + "\n");
         sawOutput = false;
         status.setText(debug ? "starting, debug log on…" : "starting…");
         ui.postDelayed(new Runnable() {
@@ -340,11 +373,23 @@ public final class MainActivity extends Activity {
         final String k = kernel.getAbsolutePath();
         final String d = disk.exists() ? disk.getAbsolutePath() : null;
         final String i = initrd.exists() ? initrd.getAbsolutePath() : null;
-        final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw";
+        /* Two additions to the plain boot line, both for a phone.
+         *
+         * rvm.time=virtual makes the emulator derive mtime from retired
+         * instructions (see src/devices/clint.c): the guest then measures its own
+         * progress instead of real time, so a boot that takes four minutes of
+         * wall clock does not look to it like a CPU stuck for four minutes.
+         *
+         * nosoftlockup keeps the watchdog's own reports out of dmesg for the
+         * cases virtual time cannot cover - the vCPU thread genuinely not being
+         * scheduled, which is what happens while a two gigabyte file is still
+         * being copied or the screen is off. */
+        final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 "
+            + "root=/dev/vda rootwait rw nosoftlockup rvm.time=virtual";
 
         vmThread = new Thread(new Runnable() {
             @Override public void run() {
-                long h = RvmNative.vmCreate(k, d, i, 512, bootargs, debug);
+                long h = RvmNative.vmCreate(k, d, i, ramMib, bootargs, debug);
                 if (h == 0) {
                     ui.post(new Runnable() {
                         @Override public void run() {
@@ -395,46 +440,179 @@ public final class MainActivity extends Activity {
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (res != RESULT_OK || data == null || data.getData() == null) return;
-        final Uri uri = data.getData();
-        final File dest = (req == PICK_KERNEL) ? kernel : (req == PICK_DISK) ? disk : initrd;
+        startCopy(data.getData(), (req == PICK_KERNEL) ? kernel
+                : (req == PICK_DISK) ? disk : initrd);
+    }
+
+    private boolean copyIn(Uri uri, File dest) {
+        File tmp = new File(dest.getParentFile(), dest.getName() + ".part");
+        boolean ok = false;
+        InputStream raw = null, in = null;
+        FileOutputStream out = null;
+        try {
+            raw = getContentResolver().openInputStream(uri);
+            if (raw == null) return false;
+            BufferedInputStream bin = new BufferedInputStream(raw, 1 << 16);
+            bin.mark(4);
+            int a = bin.read(), b = bin.read();
+            bin.reset();
+            /* gzip is sniffed rather than trusted from the file name, because the
+             * document provider decides what the name is and a .gz that is not
+             * gzipped is exactly as common as the other way round. */
+            in = (a == 0x1f && b == 0x8b) ? (InputStream) new GZIPInputStream(bin, 1 << 16) : bin;
+            out = new FileOutputStream(tmp);
+            byte[] buf = new byte[1 << 16];
+            long soFar = 0;
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if ((soFar >>> 23) != ((soFar + n) >>> 23)) announce(dest, soFar + n); /* every 8 MiB */
+                soFar += n;
+            }
+            out.getFD().sync();
+            out.close();
+            out = null;
+            in.close();
+            in = null;
+            if (dest.exists() && !dest.delete()) return false;
+            ok = tmp.renameTo(dest);
+            return ok;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            close(raw); close(in); close(out);
+            if (!ok) tmp.delete(); /* never leave a half image where Boot can find it */
+        }
+    }
+
+    /* ---------------------------------------------------------------- misc */
+
+    /* ------------------------------------------------------- machine spec */
+
+    static final class MachineSpec {
+        int ramMib = 1536;
+        int cpus = 1;
+    }
+
+    /**
+     * Accepts `ram=1536 cpu=1`, `1536,1`, or a bare `1536`.  Clamped, because a
+     * typo here either fails the mmap or starves the guest, and both look like an
+     * emulator bug from the outside.
+     */
+    static MachineSpec parseSpec(String raw) {
+        MachineSpec sp = new MachineSpec();
+        if (raw == null) return sp;
+        Matcher m = Pattern.compile("(?i)(?:ram\\s*=\\s*)?(\\d{3,4})(?:\\D+(?:cpu\\s*=\\s*)?(\\d+))?")
+            .matcher(raw.trim());
+        if (m.find()) {
+            int ram = Integer.parseInt(m.group(1));
+            sp.ramMib = Math.max(256, Math.min(4096, ram));
+            if (m.group(2) != null)
+                sp.cpus = Math.max(1, Integer.parseInt(m.group(2)));
+        }
+        /* One hart is all the emulator has today (PLAN step 2), so the parsed
+         * count is folded back to 1 rather than ignored: the field already
+         * exists, and the second core needs no new dialog. */
+        sp.cpus = 1;
+        return sp;
+    }
+
+    private String loadSpec() {
+        return getSharedPreferences("rvm", MODE_PRIVATE)
+            .getString("machine_spec", "ram=1536 cpu=1");
+    }
+
+    private void applySpec(String raw) {
+        MachineSpec sp = parseSpec(raw);
+        ramMib = sp.ramMib;
+        harts = sp.cpus;
+        specRaw = (raw == null || raw.trim().isEmpty()) ? "ram=" + ramMib + " cpu=1" : raw.trim();
+    }
+
+    private void saveSpec(String raw) {
+        getSharedPreferences("rvm", MODE_PRIVATE).edit().putString("machine_spec", raw).apply();
+    }
+
+    private void askMachine() {
+        final EditText field = new EditText(this);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        field.setSingleLine(true);
+        field.setTypeface(Typeface.MONOSPACE);
+        field.setText(specRaw);
+        field.setSelection(specRaw.length());
+        new AlertDialog.Builder(this)
+            .setTitle("Machine")
+            .setMessage("ram=1536 cpu=1  (applies on the next Boot)")
+            .setView(field)
+            .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int w) {
+                    String raw = field.getText().toString().trim();
+                    applySpec(raw);
+                    saveSpec(raw);
+                    status.setText("ram " + ramMib + " MiB, cpu " + harts + " - boot to apply");
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /* --------------------------------------------------------- asset copies */
+
+    /**
+     * Stream a picked file into our own directory, inflating it on the way in if
+     * it is gzipped.
+     *
+     * The release ships disk.img.gz, and unzipping two gigabytes by hand on a
+     * phone is where truncated images came from; reading the gzip here means the
+     * phone moves 166 MB instead.  Boot waits for this (see startVm), because a
+     * VM started on a half written image hangs mid-I/O and the guest then looks
+     * broken rather than unfinished.
+     */
+    private void startCopy(final Uri uri, final File dest) {
+        if (copying) { toast("still copying - wait for the size to show in the bar"); return; }
+        /* No stopVm() here: ensureAsset already stopped the VM before the picker
+         * opened, and stopVm blocks the calling thread on a join - which from the
+         * UI thread is an ANR, because the runnable it waits for is the one that
+         * needs this same thread. */
+        long need = dest.getName().equals("disk.img") ? 3L << 30 : 64L << 20;
+        long free = freeBytes();
+        if (free > 0 && free < need) {
+            status.setText("not enough room: " + human(free) + " free, about " + human(need) + " needed");
+            toast("free up space, then pick the file again");
+            return;
+        }
+        copying = true;
         status.setText("copying " + dest.getName() + "…");
         new Thread(new Runnable() {
             @Override public void run() {
                 final boolean ok = copyIn(uri, dest);
                 final long size = dest.length();
+                copying = false;
                 ui.post(new Runnable() {
                     @Override public void run() {
                         status.setText(ok ? dest.getName() + ": " + human(size)
-                                          : "copy failed");
+                                          : "copy failed (not enough space?)");
                     }
                 });
             }
         }, "rvm-copy").start();
     }
 
-    private boolean copyIn(Uri uri, File dest) {
-        InputStream in = null;
-        OutputStream out = null;
+    private long freeBytes() {
         try {
-            in = getContentResolver().openInputStream(uri);
-            if (in == null) return false;
-            File tmp = new File(dest.getParentFile(), dest.getName() + ".part");
-            out = new FileOutputStream(tmp);
-            byte[] buf = new byte[1 << 16];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            out.close();
-            out = null;
-            if (dest.exists() && !dest.delete()) return false;
-            return tmp.renameTo(dest);
+            return new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes();
         } catch (Exception e) {
-            return false;
-        } finally {
-            close(in); close(out);
+            return -1; /* no gate rather than a false refusal */
         }
     }
 
-    /* ---------------------------------------------------------------- misc */
+    private void announce(final File dest, final long soFar) {
+        final long bytes = soFar;
+        final String name = dest.getName();
+        ui.post(new Runnable() {
+            @Override public void run() { status.setText("copying " + name + ": " + human(bytes)); }
+        });
+    }
 
     private void banner(String s) { console.write(s.getBytes(), s.getBytes().length); }
 

@@ -168,6 +168,13 @@ rvm_err vm_new(vm *v, const vm_opts *o) {
     if ((e = clint_init(&v->clint)) != RVM_OK)
         goto fail;
 
+    /* The guest clock can follow retired instructions instead of the host
+     * clock.  Asked for with an option, and with rvm.time=virtual on the kernel
+     * command line, which is how the Android front end turns it on: the JNI
+     * entry point already passes bootargs and nothing else. */
+    if (o->virtual_time || (o->bootargs && strstr(o->bootargs, "rvm.time=virtual")))
+        clint_set_virtual_time(&v->clint, true, v->cpu.instret);
+
     /*
      * Firmware duty, and the reason a kernel entered in S-mode used to die on
      * its first page fault: with medeleg zero every S-mode trap lands in
@@ -373,6 +380,7 @@ static void refresh_interrupts(vm *v) {
     /* clint_tick() returns the MSIP/MTIP bits it drives -- *not* mtime.  The
      * two used to be conflated, which made CSR_TIME (rdtime) read as 0 and
      * broke the guest's clocksource. */
+    clint_advance(&v->clint, v->cpu.instret);
     u64 bits = clint_tick(&v->clint);
     v->cpu.hw_time = clint_mtime(&v->clint);
     v->cpu.hw_mip = bits | plic_update(&v->plic);

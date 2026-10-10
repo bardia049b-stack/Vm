@@ -26,8 +26,8 @@ android {
         // Keep in step with the tag: the release workflow does not rewrite
         // these, and an APK that cannot say which build it is cannot be
         // supported.  v0.3.4 -> 0.3.4.
-        versionCode = 16
-        versionName = "0.3.10"
+        versionCode = 17
+        versionName = "0.3.11"
 
         // Only the ABIs people actually run RISC-V guests on.  Shipping one
         // instead of four is the single biggest APK size win available.

@@ -93,6 +93,7 @@ int main(int argc, char **argv) {
     RUN(test_uart_hello);
     RUN(test_uart_fifo_irq);
     RUN(test_clint_mtimecmp);
+    RUN(test_clint_virtual_time);
     RUN(test_plic_claim);
     RUN(test_virtio_transport);
     RUN(test_virtio_blk_roundtrip);

@@ -6,6 +6,75 @@ Newest first. Tagging v* is what fires .github/workflows/release.yml.
 unreleased
 ----------
 
+0.3.11.  Every change below is in the APK: a phone that already has `Image` and
+`disk.img` from v0.3.10 installs the new app and nothing else.
+
+src/devices/clint.c, src/vm/vm.c: an instruction-derived guest clock, switched on
+by `rvm.time=virtual` in the bootargs.  `mtime` counted the host's real time while
+the vCPU ran at whatever fraction of that a phone scheduler grants it, so a Debian
+that needed four minutes of wall clock to boot had also - by its own measurement -
+spent four minutes on one core with no timer interrupt taken, and every watchdog
+in the kernel says what a four minute gap means: `BUG: soft lockup - CPU#0 stuck
+for 67s! [sed:115]`, `hrtimer: interrupt took 69700684700 ns`.  `mtime` is now
+derived from retired instructions at a fixed 50 MIPS, so guest time is
+proportional to work done and slow host code costs the guest nothing but wall
+clock.  Derived cumulatively from `clint_new`'s baseline rather than added per
+batch, because the per-batch form loses the sub-tick remainder on every tick and
+ran the clock slow (`test_clint_virtual_time` asserts monotonicity, proportional
+advance, a clock that stands still while the vCPU sleeps, and that mtimecmp still
+fires off the same counter).  The desktop build and the tests keep the host clock;
+the flag is opt-in and travels in the bootargs so the JNI signature did not have
+to change.
+
+android/app: the machine is a field, not a constant.  `vmCreate` was called with
+512 MiB against a 2 GiB disk and there was no way to change it short of rebuilding.
+menu -> Machine edits one line, `ram=1536 cpu=1`, parsed leniently (`1536`,
+`1536,1`, `RAM = 2048 CPU = 2` all work), clamped to 256-4096 MiB, kept in the
+same SharedPreferences as the boot flags, handed to `vmCreate`, and echoed by a
+Ready banner that says what the VM actually got - which is the difference between
+"it is broken" and "it is still booting", a question the status bar used to leave
+open for two minutes at a time.  `cpu` is parsed and folded back to 1, because one
+hart is all the emulator has (PLAN step 2) and the field already existing means
+the second core needs no new dialog.
+
+android/app: Boot no longer races the asset copy, which was a second, unrelated
+source of "boot stops at `INIT: No inittab.d directory found`".  `startCopy` was
+fire-and-forget, so Boot while `disk.img.part` was still being streamed renamed
+the file under the VM and the guest hung on an image half its final size.  Boot
+now refuses while a copy is running and says which file; the copy preflights the
+free space a 2 GiB image needs instead of failing with a bare `copy failed`; a
+picked `disk.img.gz` is inflated on the way in (the release ships the image
+gzipped and a phone has no archive tool, which is where truncated images came
+from); a `disk.img` far smaller than expected is refused rather than booted; and a
+failed copy deletes its `.part` so the next attempt starts clean.  The
+`initrd.img` asset inside the APK is what makes all of this enough: `/init` in
+that image runs before the hand-off to `/sbin/init`, so anything the image needs
+patched on first boot belongs there, not in a re-download.
+
+android/app: bootargs are now `console=ttyS0 earlycon=... root=/dev/vda rootwait rw
+nosoftlockup rvm.time=virtual`.  The second addition is the clock above; the first
+keeps the watchdog's own reports out of a console where they read as fatal, for
+the cases the clock cannot cover - the vCPU thread genuinely not being scheduled,
+which happens while a two gigabyte file is copied or the screen is off.
+
+Measured on the released image, at 1536 MiB with the virtual clock: `/proc/uptime`
+72 s after 215 s of wall clock to reach the prompt, `dmesg` with zero hits for
+`soft lockup` and zero for `oom-kill`, `MemTotal` 1484204 kB.  That is the phone's
+`BUG: soft lockup - CPU#0 stuck for 67s! [sed:115]` gone.  `apt-get update` is
+unchanged by any of it and the reason is now narrowed: it dies inside apt a few
+seconds in, before the first `Get:` line and before the acquire machinery prints
+anything (`-o Debug::pkgAcquire=1 -o Debug::Acquire::http=1` produced a two line
+log, the `std::bad_alloc` and nothing else), and `apt-get install`, `dpkg`, curl
+and ping all work in the same guest.  Cleared by measurement, in the same boot:
+memory size, swap, `CommitLimit` and `vm.overcommit_memory=1`, `ulimit -v`
+(unlimited) and `RLIMIT_DATA`, the stale 45 MB `pkgcache.bin` and the 90 MB of
+baked-in indexes (removed), `Acquire::Languages=none`, `APT::Cache-Limit`/
+`Cache-Start`/`Cache-Grow`, the contents of `/etc/apt/apt.conf.d` (stock Debian,
+two files), `/var/lib/apt/lists` moved to tmpfs so the write path is not the
+emulated disk, and the relay itself.  What is left is apt's own computation: the
+`-1` that the phone's progress bar printed as 4294967295 % reaching `operator
+new`.  Chasing that needs an strace of apt, which needs a debug image - nothing in
+it is a reason to hold the four changes above.
 android/app: the view now answers the terminal queries the guest blocks on -- DSR
 cursor position (`CSI 6 n`), status (`CSI 5 n`) and device attributes (`CSI c`).
 It used to swallow them on the theory that the emulator replies; nothing does,

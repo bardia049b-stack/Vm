@@ -36,6 +36,10 @@ typedef struct vm_opts {
     u64 disk_size;
 
     const char *bootargs;
+    /* Derive the guest clock from retired instructions rather than the host
+     * clock.  Off by default: the desktop and the tests want real time, a phone
+     * wants a clock that matches how much work the guest has done. */
+    bool virtual_time;
     const char *isa;      /* default "rv64imafdc" */
     const char *mmu_type; /* default "riscv,sv57" */
 

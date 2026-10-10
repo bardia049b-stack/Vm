@@ -5,6 +5,54 @@
 #include "fixtures/harness.h"
 #include "test.h"
 
+#include <time.h> /* nanosleep: the guest clock must not follow the host one */
+
+#include "../src/cpu/cpu.h" /* MIP_STIP */
+
+/* A guest running at a fraction of host speed must not see its own clock race
+ * ahead of its work: that is what turns a slow boot into "BUG: soft lockup". */
+void test_clint_virtual_time(void) {
+    clint c;
+    CHECK(clint_init(&c) == RVM_OK);
+
+    /* 10 MHz against 50 MIPS: five instructions per tick, no more. */
+    clint_set_virtual_time(&c, true, 0);
+    c.mtime = 0;
+    clint_advance(&c, 5);
+    CHECK_U64(c.mtime, 1);
+    clint_advance(&c, 15);
+    CHECK_U64(c.mtime, 3);
+    /* Fewer instructions than a tick: the remainder is kept, not dropped. */
+    clint_advance(&c, 17);
+    CHECK_U64(c.mtime, 3);
+    clint_advance(&c, 20);
+    CHECK_U64(c.mtime, 4);
+    /* Never backwards, never a repeat. */
+    clint_advance(&c, 12);
+    CHECK_U64(c.mtime, 4);
+
+    /* While the host clock runs on, the guest clock does not move. */
+    struct timespec nap = {0, 5000000}; /* 5 ms: 50000 ticks of real time */
+    nanosleep(&nap, NULL);
+    CHECK_U64(clint_tick(&c), 0);
+    CHECK_U64(c.mtime, 4);
+
+    /* Timers still fire off the same counter, so a guest that sleeps wakes. */
+    c.mtimecmp[0] = 6;
+    CHECK_U64(clint_tick(&c) & MIP_STIP, 0);
+    clint_advance(&c, 40);
+    CHECK((clint_tick(&c) & MIP_STIP) != 0);
+
+    /* Off again, and real time rules. */
+    clint_set_virtual_time(&c, false, 0);
+    c.free_running = true;
+    c.mtime = 0;
+    c.base_ns = rvm_now_ns();
+    nanosleep(&nap, NULL);
+    clint_tick(&c);
+    CHECK(c.mtime > 0);
+}
+
 void test_clint_mtimecmp(void) {
     th t;
     CHECK(th_init(&t) == RVM_OK);
