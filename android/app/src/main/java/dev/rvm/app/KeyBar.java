@@ -63,7 +63,7 @@ public final class KeyBar extends LinearLayout {
         b.setPadding(dp(12), 0, dp(12), 0);
         b.setAllCaps(false);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        b.setTextColor(0xFF2B2B28);
+        b.setTextColor(0xFFE6E6E6);
         b.setGravity(Gravity.CENTER);
         b.setStateListAnimator(null);
         b.setElevation(0);
@@ -77,7 +77,7 @@ public final class KeyBar extends LinearLayout {
             @Override public void onClick(View v) {
                 if (toggle) {
                     b.setActivated(!b.isActivated());
-                    b.setTextColor(b.isActivated() ? 0xFFEDEBE6 : 0xFF2B2B28);
+                    b.setTextColor(b.isActivated() ? 0xFFFFFFFF : 0xFFE6E6E6);
                     /* Ctrl stays latched: the next letter is sent as a control
                      * code by MainActivity, which reads isCtrlLatched(). */
                 } else {
@@ -135,7 +135,7 @@ public final class KeyBar extends LinearLayout {
             View v = getChildAt(i);
             if (v instanceof Button && ((Button) v).isActivated()) {
                 v.setActivated(false);
-                ((Button) v).setTextColor(0xFF2B2B28);
+                ((Button) v).setTextColor(0xFFE6E6E6);
             }
         }
     }

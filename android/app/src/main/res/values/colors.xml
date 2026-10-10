@@ -6,12 +6,12 @@
   calm rather than as a themed widget library.
 -->
 <resources>
-    <color name="paper">#F5F4F0</color>
-    <color name="paper_dark">#EDEBE6</color>
-    <color name="ink">#2B2B28</color>
-    <color name="ink_soft">#6E6C66</color>
-    <color name="rule">#D8D5CE</color>
-    <!-- Text that sits on the ink header bar. -->
-    <color name="on_ink">#EDEBE6</color>
-    <color name="on_ink_soft">#A6A49D</color>
+    <color name="paper">#000000</color>
+    <color name="paper_dark">#1B1B1B</color>
+    <color name="ink">#E6E6E6</color>
+    <color name="ink_soft">#9A9A9A</color>
+    <color name="rule">#2E2E2E</color>
+    <!-- Text that sits on the header bar. -->
+    <color name="on_ink">#FFFFFF</color>
+    <color name="on_ink_soft">#B0B0B0</color>
 </resources>

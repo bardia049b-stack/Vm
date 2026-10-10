@@ -33,6 +33,7 @@ public final class MainActivity extends Activity {
 
     private static final int PICK_KERNEL = 1;
     private static final int PICK_DISK = 2;
+    private static final int PICK_INITRD = 3;
 
     private RvmView console;
     private GfxView gfx;
@@ -44,7 +45,7 @@ public final class MainActivity extends Activity {
     private volatile Thread vmThread;
     private volatile boolean sawOutput;
     private boolean debug;
-    private File kernel, disk;
+    private File kernel, disk, initrd;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -58,6 +59,8 @@ public final class MainActivity extends Activity {
 
         kernel = new File(getFilesDir(), "vmlinux");
         disk = new File(getFilesDir(), "disk.img");
+        initrd = new File(getFilesDir(), "initrd.img");
+        ensureBuiltinInitrd();
 
         debug = getSharedPreferences("rvm", MODE_PRIVATE).getBoolean("debug", false);
         applyLogSink();
@@ -124,7 +127,8 @@ public final class MainActivity extends Activity {
                  + "then 'Boot'.\n\nLong-press the RVM title for a debug log.");
         } else {
             banner("Ready.\n  kernel: " + human(kernel.length())
-                 + (disk.exists() ? "\n  disk:   " + human(disk.length()) : "\n  disk:   (none)")
+                 + "\n  initrd: " + (initrd.exists() ? human(initrd.length()) : "(none)")
+                 + "\n  disk:   " + (disk.exists() ? human(disk.length()) : "(none)")
                  + "\n\nTap 'Boot'.  Long-press the RVM title for a debug log.");
         }
     }
@@ -198,6 +202,7 @@ public final class MainActivity extends Activity {
         Button boot = findViewById(R.id.btn_boot);
         Button pickKernel = findViewById(R.id.btn_kernel);
         Button pickDisk = findViewById(R.id.btn_disk);
+        Button pickInitrd = findViewById(R.id.btn_initrd);
         Button stop = findViewById(R.id.btn_stop);
 
         boot.setOnClickListener(new View.OnClickListener() {
@@ -212,6 +217,9 @@ public final class MainActivity extends Activity {
         pickDisk.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pick(PICK_DISK); }
         });
+        pickInitrd.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { pick(PICK_INITRD); }
+        });
     }
 
     private void send(byte[] seq) {
@@ -221,6 +229,29 @@ public final class MainActivity extends Activity {
     }
 
     /* ------------------------------------------------------------ run/stop */
+
+    /*
+     * The APK ships a busybox initramfs as an asset so a kernel alone boots
+     * to a shell with a working tty.  Copied out on first run; a file the
+     * user picks later simply replaces it.
+     */
+    private void ensureBuiltinInitrd() {
+        if (initrd.exists()) return;
+        java.io.InputStream in = null;
+        java.io.OutputStream out = null;
+        try {
+            in = getAssets().open("initrd.img");
+            out = new java.io.FileOutputStream(initrd);
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        } catch (java.io.IOException e) {
+            initrd.delete();
+        } finally {
+            try { if (in != null) in.close(); } catch (java.io.IOException ignored) { }
+            try { if (out != null) out.close(); } catch (java.io.IOException ignored) { }
+        }
+    }
 
     private void startVm() {
         if (vmThread != null) { toast("already running"); return; }
@@ -238,11 +269,12 @@ public final class MainActivity extends Activity {
         }, 8000);
         final String k = kernel.getAbsolutePath();
         final String d = disk.exists() ? disk.getAbsolutePath() : null;
-        final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw init=/bin/sh";
+        final String i = initrd.exists() ? initrd.getAbsolutePath() : null;
+        final String bootargs = "console=ttyS0 earlycon=ns16550a,mmio32,0x10000000 root=/dev/vda rootwait rw";
 
         vmThread = new Thread(new Runnable() {
             @Override public void run() {
-                long h = RvmNative.vmCreate(k, d, null, 512, bootargs, debug);
+                long h = RvmNative.vmCreate(k, d, i, 512, bootargs, debug);
                 if (h == 0) {
                     ui.post(new Runnable() {
                         @Override public void run() {
@@ -294,7 +326,7 @@ public final class MainActivity extends Activity {
         super.onActivityResult(req, res, data);
         if (res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
-        final File dest = (req == PICK_KERNEL) ? kernel : disk;
+        final File dest = (req == PICK_KERNEL) ? kernel : (req == PICK_DISK) ? disk : initrd;
         status.setText("copying " + dest.getName() + "…");
         new Thread(new Runnable() {
             @Override public void run() {

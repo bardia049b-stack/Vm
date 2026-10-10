@@ -79,6 +79,9 @@
         <Button android:id="@+id/btn_disk"
             style="@style/RvmButton"
             android:text="@string/disk" />
+        <Button android:id="@+id/btn_initrd"
+            style="@style/RvmButton"
+            android:text="@string/initrd" />
     </LinearLayout>
 
     <View

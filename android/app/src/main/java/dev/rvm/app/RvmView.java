@@ -63,13 +63,13 @@ public final class RvmView extends View {
 
     public RvmView(Context c, AttributeSet a, int defStyle) {
         super(c, a, defStyle);
-        bg.setColor(0xFFF5F4F0);      /* soft paper */
-        fg.setColor(0xFF2B2B28);      /* soft ink   */
+        bg.setColor(0xFF000000);      /* termux-like: black glass, white glyphs */
+        fg.setColor(0xFFFFFFFF);
         fg.setTypeface(Typeface.MONOSPACE);
-        cursor.setColor(0xFF2B2B28);
+        cursor.setColor(0xFFFFFFFF);
         setFocusable(true);
         setFocusableInTouchMode(true);
-        setBackgroundColor(0xFFF5F4F0);
+        setBackgroundColor(0xFF000000);
 
         gestures = new GestureDetector(c, new GestureDetector.SimpleOnGestureListener() {
             @Override public boolean onSingleTapUp(MotionEvent e) {

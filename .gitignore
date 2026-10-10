@@ -68,3 +68,7 @@ Thumbs.db
 # --- logs ---
 *.log
 trace.log
+
+# the app ships its initramfs as an asset; the ignore rules above are for
+# scratch images, not for this one
+!android/app/src/main/assets/initrd.img
