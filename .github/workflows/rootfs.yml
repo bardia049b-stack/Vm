@@ -83,9 +83,9 @@ jobs:
           RESOLV
           # The acceptance test for PLAN step 9, run here so a green build means
           # the image really carries the pieces the guest boots with, and not
-          # just that an ext4 file packed.  ifupdown brings eth0 up at boot, and
-          # its postinst wires only the systemd unit, so the SysV link in rcS.d
-          # has to exist by the time we look at it.
+          # just that an ext4 file packed.  The rcS.d link is the one worth
+          # asserting: the first image with ifupdown installed failed here over a
+          # package list that had silently not been installed at all.
           sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec '
             test -x /etc/init.d/networking
             ls /etc/rcS.d/S*networking > /dev/null
@@ -95,12 +95,38 @@ jobs:
             grep -q 10.0.2.3 /etc/resolv.conf
           '
 
+      - name: bound the boot-time DHCP wait
+        run: |
+          set -e
+          # ifupdown runs dhclient for us and ISC logs to syslog, so the console
+          # says nothing at all while it retries -- on a phone that is a boot
+          # that appears to have fallen asleep for minutes inside
+          # "Configuring network interfaces".  ISC defaults retry for five
+          # minutes before it gives a lease up, so bound it here.  A failure is
+          # survivable: the initramfs already left an address and a route on the
+          # interface, and those walk into the new root untouched.
+          sudo tee /srv/rootfs/etc/dhcp/dhclient.conf > /dev/null <<'DHCPC'
+          timeout bootp 15;
+          timeout retry 15;
+          reboot 5;
+          backoff-cutoff 5;
+          initial-interval 2;
+          select retry-times 2;
+          request subnet-mask, routers, domain-name-servers, host-name;
+          DHCPC
+          sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/bash -ec 'grep -q "timeout retry 15" /etc/dhcp/dhclient.conf'
+
       - name: enable networking at boot
         run: |
           set -e
+          # Insurance, not a fix.  ifupdown's own postinst normally creates the
+          # rcS.d link -- the assertion in the step above is what proves it -- but
+          # every enable is skipped while /usr/sbin/policy-rc.d sits in the target,
+          # and a minbase chroot is where that file tends to survive.  -f so that
+          # re-running this over an existing link is not an error.
           sudo rm -f /srv/rootfs/usr/sbin/policy-rc.d
           sudo chroot /srv/rootfs /usr/bin/qemu-riscv64-static /bin/sh -c \
-            'update-rc.d networking start 20 S . stop 20 0 1 6 .'
+            'update-rc.d -f networking start 20 S . stop 20 0 1 6 .'
           sudo ls /srv/rootfs/etc/rcS.d | grep networking
 
       - name: build disk.img
